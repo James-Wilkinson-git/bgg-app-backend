@@ -53,6 +53,7 @@ app.get("/api/games", async (req, res) => {
       maxPlayers: game.maxplayers?.[0]?.$.value || "N/A",
       playingTime: game.playingtime?.[0]?.$.value || "N/A",
       minAge: game.minage?.[0]?.$.value || "N/A",
+      link: game.link || "N/A",
       thumbnail:
         game.thumbnail?.[0] || "https://placehold.co/388x256?text=No+Image",
       categories:
