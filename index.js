@@ -4,7 +4,7 @@ import { parseStringPromise } from "xml2js";
 import cors from "cors";
 
 const app = express();
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
 
 app.use(cors());
 
@@ -76,5 +76,5 @@ const extractBoardGameId = (url) => {
 };
 
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`Server is running on ${PORT}`);
 });
