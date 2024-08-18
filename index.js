@@ -54,7 +54,7 @@ app.get("/api/games", async (req, res) => {
       playingTime: game.playingtime?.[0]?.$.value || "N/A",
       minAge: game.minage?.[0]?.$.value || "N/A",
       thumbnail:
-        game.thumbnail?.[0] || "https://placehold.co/400x600?text=No+Image",
+        game.thumbnail?.[0] || "https://placehold.co/388x256?text=No+Image",
       categories:
         game.link
           ?.filter((link) => link.$.type === "boardgamecategory")
