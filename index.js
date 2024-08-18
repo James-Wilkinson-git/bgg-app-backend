@@ -53,7 +53,6 @@ app.get("/api/games", async (req, res) => {
       maxPlayers: game.maxplayers?.[0]?.$.value || "N/A",
       playingTime: game.playingtime?.[0]?.$.value || "N/A",
       minAge: game.minage?.[0]?.$.value || "N/A",
-      link: game.link || "N/A",
       thumbnail:
         game.thumbnail?.[0] || "https://placehold.co/388x256?text=No+Image",
       categories:
@@ -63,6 +62,14 @@ app.get("/api/games", async (req, res) => {
       mechanics:
         game.link
           ?.filter((link) => link.$.type === "boardgamemechanic")
+          .map((link) => link.$.value) || [],
+      designer:
+        game.link
+          ?.filter((link) => link.$.type === "boardgamedesigner")
+          .map((link) => link.$.value) || [],
+      publisher:
+        game.link
+          ?.filter((link) => link.$.type === "boardgamepublisher")
           .map((link) => link.$.value) || [],
     }));
 
