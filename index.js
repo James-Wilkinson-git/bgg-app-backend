@@ -36,6 +36,7 @@ app.get("/api/games", async (req, res) => {
     // Step 2: Fetch game details using the extracted IDs
     const idsParam = gameIds.join(",");
     const gameDetailsUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${idsParam}`;
+    console.log(gameDetailsUrl);
     const gameResponse = await fetch(gameDetailsUrl);
     if (!gameResponse.ok) {
       throw new Error("Failed to fetch the game details");
@@ -53,6 +54,7 @@ app.get("/api/games", async (req, res) => {
       maxPlayers: game.maxplayers?.[0]?.$.value || "N/A",
       playingTime: game.playingtime?.[0]?.$.value || "N/A",
       minAge: game.minage?.[0]?.$.value || "N/A",
+      thumbnail: game.thumbnail?.[0]?.$.value || "empty",
       categories:
         game.link
           ?.filter((link) => link.$.type === "boardgamecategory")
