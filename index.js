@@ -27,6 +27,7 @@ app.get("/api/games", async (req, res) => {
           !item.link[0].includes("boardgameexpansion") &&
           !item.link[0].includes("boardgameaccessory")
       )
+      .slice(0, 20)
       .map((item) => {
         const link = item.link[0];
         return extractBoardGameId(link);
