@@ -27,51 +27,61 @@ app.get("/api/games", async (req, res) => {
           !item.link[0].includes("boardgameexpansion") &&
           !item.link[0].includes("boardgameaccessory")
       )
-      .slice(0, 20)
       .map((item) => {
         const link = item.link[0];
         return extractBoardGameId(link);
       });
 
-    // Step 2: Fetch game details using the extracted IDs
-    const idsParam = gameIds.join(",");
-    const gameDetailsUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${idsParam}`;
-    const gameResponse = await fetch(gameDetailsUrl);
-    if (!gameResponse.ok) {
-      throw new Error("Failed to fetch the game details");
-    }
-    const gameXmlText = await gameResponse.text();
-    const gameResult = await parseStringPromise(gameXmlText);
+    // Function to fetch game details with a delay
+    const fetchGameDetailsWithDelay = async (ids) => {
+      const gameDetailsUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${ids.join(",")}`;
+      const gameResponse = await fetch(gameDetailsUrl);
+      if (!gameResponse.ok) {
+        throw new Error("Failed to fetch the game details");
+      }
+      const gameXmlText = await gameResponse.text();
+      return parseStringPromise(gameXmlText);
+    };
 
-    // Extracting relevant details for each game with defensive checks
-    const games = (gameResult.items.item || []).map((game) => ({
-      id: game.$?.id || "N/A",
-      name: game.name?.[0]?.$.value || "No name available",
-      description: game.description?.[0] || "No description available",
-      yearPublished: game.yearpublished?.[0]?.$.value || "N/A",
-      minPlayers: game.minplayers?.[0]?.$.value || "N/A",
-      maxPlayers: game.maxplayers?.[0]?.$.value || "N/A",
-      playingTime: game.playingtime?.[0]?.$.value || "N/A",
-      minAge: game.minage?.[0]?.$.value || "N/A",
-      thumbnail:
-        game.thumbnail?.[0] || "https://placehold.co/388x256?text=No+Image",
-      categories:
-        game.link
-          ?.filter((link) => link.$.type === "boardgamecategory")
-          .map((link) => link.$.value) || [],
-      mechanics:
-        game.link
-          ?.filter((link) => link.$.type === "boardgamemechanic")
-          .map((link) => link.$.value) || [],
-      designer:
-        game.link
-          ?.filter((link) => link.$.type === "boardgamedesigner")
-          .map((link) => link.$.value) || [],
-      publisher:
-        game.link
-          ?.filter((link) => link.$.type === "boardgamepublisher")
-          .map((link) => link.$.value) || [],
-    }));
+    // Fetch game details in batches of 20 with a 5.5-second delay
+    const games = [];
+    for (let i = 0; i < gameIds.length; i += 20) {
+      const batchIds = gameIds.slice(i, i + 20);
+      const gameResult = await fetchGameDetailsWithDelay(batchIds);
+      games.push(
+        ...(gameResult.items.item || []).map((game) => ({
+          id: game.$?.id || "N/A",
+          name: game.name?.[0]?.$.value || "No name available",
+          description: game.description?.[0] || "No description available",
+          yearPublished: game.yearpublished?.[0]?.$.value || "N/A",
+          minPlayers: game.minplayers?.[0]?.$.value || "N/A",
+          maxPlayers: game.maxplayers?.[0]?.$.value || "N/A",
+          playingTime: game.playingtime?.[0]?.$.value || "N/A",
+          minAge: game.minage?.[0]?.$.value || "N/A",
+          thumbnail:
+            game.thumbnail?.[0] || "https://placehold.co/388x256?text=No+Image",
+          categories:
+            game.link
+              ?.filter((link) => link.$.type === "boardgamecategory")
+              .map((link) => link.$.value) || [],
+          mechanics:
+            game.link
+              ?.filter((link) => link.$.type === "boardgamemechanic")
+              .map((link) => link.$.value) || [],
+          designer:
+            game.link
+              ?.filter((link) => link.$.type === "boardgamedesigner")
+              .map((link) => link.$.value) || [],
+          publisher:
+            game.link
+              ?.filter((link) => link.$.type === "boardgamepublisher")
+              .map((link) => link.$.value) || [],
+        }))
+      );
+      if (i + 20 < gameIds.length) {
+        await new Promise((resolve) => setTimeout(resolve, 5500));
+      }
+    }
 
     res.json(games);
   } catch (error) {
