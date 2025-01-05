@@ -2,11 +2,23 @@ import express from "express";
 import fetch from "node-fetch";
 import { parseStringPromise } from "xml2js";
 import cors from "cors";
+import { MongoClient } from "mongodb";
+import dotenv from "dotenv";
+
+// Load environment variables from .env file
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
 app.use(cors());
+
+// Configure MongoDB client
+const mongoClient = new MongoClient(process.env.MONGODB_URI);
+
+await mongoClient.connect();
+const db = mongoClient.db("bgg");
+const gamesCollection = db.collection("games");
 
 app.get("/api/games", async (req, res) => {
   try {
@@ -32,6 +44,11 @@ app.get("/api/games", async (req, res) => {
         return extractBoardGameId(link);
       });
 
+    // Check MongoDB for existing game IDs
+    const existingGames = await gamesCollection.find({ id: { $in: gameIds } }).toArray();
+    const existingGameIds = existingGames.map(game => game.id);
+    const newGameIds = gameIds.filter(id => !existingGameIds.includes(id));
+
     // Function to fetch game details with a delay
     const fetchGameDetailsWithDelay = async (ids) => {
       const gameDetailsUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${ids.join(",")}`;
@@ -44,11 +61,11 @@ app.get("/api/games", async (req, res) => {
     };
 
     // Fetch game details in batches of 20 with a 5.5-second delay
-    const games = [];
-    for (let i = 0; i < gameIds.length; i += 20) {
-      const batchIds = gameIds.slice(i, i + 20);
+    const newGames = [];
+    for (let i = 0; i < newGameIds.length; i += 20) {
+      const batchIds = newGameIds.slice(i, i + 20);
       const gameResult = await fetchGameDetailsWithDelay(batchIds);
-      games.push(
+      newGames.push(
         ...(gameResult.items.item || []).map((game) => ({
           id: game.$?.id || "N/A",
           name: game.name?.[0]?.$.value || "No name available",
@@ -78,12 +95,20 @@ app.get("/api/games", async (req, res) => {
               .map((link) => link.$.value) || [],
         }))
       );
-      if (i + 20 < gameIds.length) {
+      if (i + 20 < newGameIds.length) {
         await new Promise((resolve) => setTimeout(resolve, 5500));
       }
     }
 
-    res.json(games);
+    // Save new games to MongoDB
+    if (newGames.length > 0) {
+      await gamesCollection.insertMany(newGames);
+    }
+
+    // Combine existing and new games
+    const allGames = [...existingGames, ...newGames];
+
+    res.json(allGames);
   } catch (error) {
     console.error("Error fetching game details:", error);
     res.status(500).send("Failed to fetch game details");
@@ -94,6 +119,17 @@ const extractBoardGameId = (url) => {
   const match = url.match(/\/boardgame\/(\d+)/);
   return match ? match[1] : "";
 };
+
+// New endpoint to return all data from MongoDB
+app.get("/api/all-games", async (req, res) => {
+  try {
+    const games = await gamesCollection.find().toArray();
+    res.json(games);
+  } catch (error) {
+    console.error("Error fetching all games from MongoDB:", error);
+    res.status(500).send("Failed to fetch all games");
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
