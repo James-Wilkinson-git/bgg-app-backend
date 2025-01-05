@@ -4,6 +4,8 @@ import { parseStringPromise } from "xml2js";
 import cors from "cors";
 import { MongoClient } from "mongodb";
 import dotenv from "dotenv";
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -19,6 +21,7 @@ const mongoClient = new MongoClient(process.env.MONGODB_URI);
 await mongoClient.connect();
 const db = mongoClient.db("bgg");
 const gamesCollection = db.collection("games");
+const gameIds2025 = db.collection("2025games");
 
 app.get("/api/games", async (req, res) => {
   try {
@@ -128,6 +131,33 @@ app.get("/api/all-games", async (req, res) => {
   } catch (error) {
     console.error("Error fetching all games from MongoDB:", error);
     res.status(500).send("Failed to fetch all games");
+  }
+});
+
+app.get('/api/scrape', async (req, res) => {
+  try {
+    let page = 1;
+    const gameIds = [];
+    while (true) {
+      const url = `https://boardgamegeek.com/search/boardgame/page/${page}?advsearch=1&q=&include%5Bdesignerid%5D=&include%5Bpublisherid%5D=&geekitemname=&range%5Byearpublished%5D%5Bmin%5D=2025&range%5Byearpublished%5D%5Bmax%5D=2025&range%5Bminage%5D%5Bmax%5D=&range%5Bnumvoters%5D%5Bmin%5D=&range%5Bnumweights%5D%5Bmin%5D=&range%5Bminplayers%5D%5Bmax%5D=&range%5Bmaxplayers%5D%5Bmin%5D=&range%5Bleastplaytime%5D%5Bmin%5D=&range%5Bplaytime%5D%5Bmax%5D=&floatrange%5Bavgrating%5D%5Bmin%5D=&floatrange%5Bavgrating%5D%5Bmax%5D=&floatrange%5Bavgweight%5D%5Bmin%5D=&floatrange%5Bavgweight%5D%5Bmax%5D=&colfiltertype=&searchuser=BoardGaymesJames&nosubtypes%5B0%5D=boardgameexpansion&playerrangetype=normal&B1=Submit`;
+      const response = await axios.get(url);
+      const gameEntries = response.data;
+      if (gameEntries.items.length === 0) {
+        break;
+      }
+      gameIds.push(...gameEntries.items.map(item => item.id));
+      page++;
+    }
+
+    // Save game IDs to MongoDB
+    if (gameIds.length > 0) {
+      await gameIds2025.insertMany(gameIds.map(id => ({ id })));
+    }
+
+    res.json(gameIds);
+  } catch (error) {
+    console.error("Error scraping BGG:", error);
+    res.status(500).send("Failed to scrape BGG");
   }
 });
 
