@@ -135,6 +135,7 @@ app.get("/api/all-games", async (req, res) => {
 });
 
 app.get('/api/scrape', async (req, res) => {
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   try {
     let page = 1;
     const gameIds = [];
@@ -147,6 +148,10 @@ app.get('/api/scrape', async (req, res) => {
       }
       gameIds.push(...gameEntries.items.map(item => item.id));
       page++;
+
+      // Add a delay of 2-5 seconds between requests
+      const delayTime = Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000;
+      await delay(delayTime);
     }
 
     // Save game IDs to MongoDB
