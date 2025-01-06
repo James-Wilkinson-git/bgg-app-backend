@@ -84,7 +84,7 @@ app.get("/api/games", async (req, res) => {
           game.link
             ?.filter((link) => link.$.type === "boardgamepublisher")
             .map((link) => link.$.value) || [],
-      }));
+      })).filter(game => game.yearPublished === "2025"); // Ensure yearPublished is 2025
 
       // Insert each game into MongoDB as it is fetched
       for (const game of gamesToInsert) {
@@ -129,27 +129,32 @@ app.get('/api/scrape', async (req, res) => {
   try {
     let page = 1;
     while (true) {
+      console.log(`Scraping page ${page}`);
       const url = `https://boardgamegeek.com/search/boardgame/page/${page}?advsearch=1&q=&include%5Bdesignerid%5D=&include%5Bpublisherid%5D=&geekitemname=&range%5Byearpublished%5D%5Bmin%5D=2025&range%5Byearpublished%5D%5Bmax%5D=2025&range%5Bminage%5D%5Bmax%5D=&range%5Bnumvoters%5D%5Bmin%5D=&range%5Bnumweights%5D%5Bmin%5D=&range%5Bminplayers%5D%5Bmax%5D=&range%5Bmaxplayers%5D%5Bmin%5D=&range%5Bleastplaytime%5D%5Bmin%5D=&range%5Bplaytime%5D%5Bmax%5D=&floatrange%5Bavgrating%5D%5Bmin%5D=&floatrange%5Bavgrating%5D%5Bmax%5D=&floatrange%5Bavgweight%5D%5Bmin%5D=&floatrange%5Bavgweight%5D%5Bmax%5D=&colfiltertype=&searchuser=BoardGaymesJames&nosubtypes%5B0%5D=boardgameexpansion&playerrangetype=normal&B1=Submit`;
-      console.log(`Fetching game IDs from URL: ${url}`);
       const response = await axios.get(url);
       const gameEntries = response.data;
       if (gameEntries.items.length === 0) {
+        console.log("No more games found. Exiting loop.");
         break;
       }
       const gameIds = gameEntries.items.map(item => item.id);
 
       // Check MongoDB for existing game IDs
-      const existingGameIds = await gameIds2025.find().toArray().then(games => games.map(game => game.id));
-      const newGameIds = gameIds.filter(id => !existingGameIds.includes(id));
 
+      const existingGameIds = await gameIds2025.find().toArray().then(games => games.map(game => game.id));
+
+      const newGameIds = gameIds.filter(id => !existingGameIds.includes(id));
+      console.log(`Identified ${newGameIds.length} new game IDs to save`);
       // Save new game IDs to MongoDB as they are found
       if (newGameIds.length > 0) {
+        console.log(`Saving ${newGameIds.length} new game IDs to MongoDB`);
         await gameIds2025.insertMany(newGameIds.map(id => ({ id })));
       }
-
+      console.log(`Completed page ${page}`);
       page++;
 
       // Add a delay of 2-5 seconds between requests
+      console.log("Waiting for 2-5 seconds before next request");
       const delayTime = Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000;
       await delay(delayTime);
     }
