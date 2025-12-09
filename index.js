@@ -175,8 +175,28 @@ app.get("/api/scrape", async (req, res) => {
 app.get("/api/plays/:username", async (req, res) => {
   try {
     const { username } = req.params;
+    const { refetch } = req.query;
     console.log(`Fetching 2025 plays for user: ${username}`);
 
+    // Check if plays already exist for this user
+    const existingPlays = await playsCollection
+      .find({ username, year: 2025 })
+      .toArray();
+
+    if (existingPlays.length > 0 && refetch !== "true") {
+      console.log(
+        `Found ${existingPlays.length} existing plays for ${username}, skipping fetch`
+      );
+      return res.json({
+        username,
+        year: 2025,
+        totalPlays: existingPlays.length,
+        plays: existingPlays,
+        cached: true,
+      });
+    }
+
+    console.log(`Fetching plays from BGG for ${username}`);
     const allPlays = [];
     let page = 1;
     let hasMorePages = true;
@@ -370,7 +390,6 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
             _id: "$item.objectid",
             gameName: { $first: "$item.name" },
             playCount: { $sum: { $toInt: "$quantity" } },
-            totalMinutes: { $sum: { $toInt: "$length" } },
           },
         },
         { $sort: { playCount: -1 } },
@@ -399,7 +418,8 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
         gameId: game._id,
         gameName: game.gameName,
         playCount: game.playCount,
-        totalHours: Math.round((game.totalMinutes / 60) * 10) / 10,
+        thumbnail:
+          details?.thumbnail || "https://placehold.co/388x256?text=No+Image",
         mechanics: details?.mechanics || [],
         categories: details?.categories || [],
         publisher: details?.publisher || [],
@@ -469,10 +489,6 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
       (sum, play) => sum + parseInt(play.quantity),
       0
     );
-    const totalMinutes = plays.reduce(
-      (sum, play) => sum + (parseInt(play.length) || 0),
-      0
-    );
     const uniqueGames = new Set(plays.map((play) => play.item.objectid)).size;
 
     // Plays by month
@@ -487,7 +503,6 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
       year: 2025,
       totalPlays,
       uniqueGames,
-      totalHours: Math.round((totalMinutes / 60) * 10) / 10,
       playsByMonth,
     });
   } catch (error) {
