@@ -519,12 +519,21 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
     // Count publication years weighted by play count
     const yearCounts = {};
     gameDetails.forEach((game) => {
-      const year = game.yearPublished;
-      if (year && year !== "N/A" && !isNaN(parseInt(year))) {
+      const yearStr = String(game.yearPublished);
+      const yearNum = parseInt(yearStr);
+      if (
+        yearStr &&
+        yearStr !== "N/A" &&
+        !isNaN(yearNum) &&
+        yearNum > 1900 &&
+        yearNum <= 2025
+      ) {
         const playCount = gamePlayCounts[game.id] || 1;
-        yearCounts[year] = (yearCounts[year] || 0) + playCount;
+        yearCounts[yearNum] = (yearCounts[yearNum] || 0) + playCount;
       }
     });
+
+    console.log(`Year counts for ${username}:`, yearCounts);
 
     // Find most common year
     let mostCommonYear = null;
@@ -535,6 +544,8 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
         mostCommonYear = parseInt(year);
       }
     });
+
+    console.log(`Most common year for ${username}: ${mostCommonYear}`);
 
     // Calculate "board gamer age" (2025 - most common year)
     const boardGamerAge = mostCommonYear ? 2025 - mostCommonYear : null;
