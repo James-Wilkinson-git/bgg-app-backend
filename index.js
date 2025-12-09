@@ -200,23 +200,31 @@ app.get("/api/plays/:username", async (req, res) => {
       `Fetching 2025 plays for user: ${username}, excludeBGA: ${excludeBGA}`
     );
 
-    // Check if plays already exist for this user
-    const queryCriteria = { username, year: 2025 };
-    if (excludeBGA === "true") {
-      queryCriteria.location = { $ne: "Board Game Arena" };
-    }
-
-    const existingPlays = await playsCollection.find(queryCriteria).toArray();
+    // Check if plays already exist for this user (check all plays, not filtered)
+    const existingPlays = await playsCollection
+      .find({ username, year: 2025 })
+      .toArray();
 
     if (existingPlays.length > 0 && refetch !== "true") {
       console.log(
-        `Found ${existingPlays.length} existing plays for ${username}, skipping fetch`
+        `Found ${existingPlays.length} cached plays for ${username}, applying filter`
       );
+
+      // Apply BGA filter when returning cached data
+      const filteredPlays =
+        excludeBGA === "true"
+          ? existingPlays.filter((play) => play.location !== "Board Game Arena")
+          : existingPlays;
+
+      console.log(
+        `Returning ${filteredPlays.length} plays (excludeBGA: ${excludeBGA})`
+      );
+
       return res.json({
         username,
         year: 2025,
-        totalPlays: existingPlays.length,
-        plays: existingPlays,
+        totalPlays: filteredPlays.length,
+        plays: filteredPlays,
         cached: true,
       });
     }
@@ -281,22 +289,10 @@ app.get("/api/plays/:username", async (req, res) => {
       `Total plays found for ${username} in 2025: ${allPlays.length}`
     );
 
-    // Filter out Board Game Arena plays if requested
-    const filteredPlays =
-      excludeBGA === "true"
-        ? allPlays.filter((play) => play.location !== "Board Game Arena")
-        : allPlays;
-
-    console.log(
-      `After BGA filter: ${filteredPlays.length} plays (excluded ${
-        allPlays.length - filteredPlays.length
-      } BGA plays)`
-    );
-
-    // Save plays to MongoDB
-    if (filteredPlays.length > 0) {
+    // Save ALL plays to MongoDB (no filtering at save time)
+    if (allPlays.length > 0) {
       // Add username to each play document
-      const playsWithUsername = filteredPlays.map((play) => ({
+      const playsWithUsername = allPlays.map((play) => ({
         ...play,
         username,
         year: 2025,
@@ -306,12 +302,12 @@ app.get("/api/plays/:username", async (req, res) => {
       await playsCollection.deleteMany({ username, year: 2025 });
       await playsCollection.insertMany(playsWithUsername);
       console.log(
-        `Saved ${filteredPlays.length} plays to MongoDB for user ${username}`
+        `Saved ${allPlays.length} plays to MongoDB for user ${username}`
       );
 
-      // Extract unique game IDs from plays
+      // Extract unique game IDs from plays (before filtering)
       const gameIds = [
-        ...new Set(filteredPlays.map((play) => parseInt(play.item.objectid))),
+        ...new Set(allPlays.map((play) => parseInt(play.item.objectid))),
       ];
       console.log(`Found ${gameIds.length} unique games in plays`);
 
@@ -399,11 +395,21 @@ app.get("/api/plays/:username", async (req, res) => {
       console.log(`Fetched and saved ${newGames.length} new games`);
     }
 
+    // Retrieve plays from database with BGA filter applied
+    const queryCriteria = { username, year: 2025 };
+    if (excludeBGA === "true") {
+      queryCriteria.location = { $ne: "Board Game Arena" };
+    }
+    const finalPlays = await playsCollection.find(queryCriteria).toArray();
+    console.log(
+      `Returning ${finalPlays.length} plays for ${username} (excludeBGA: ${excludeBGA})`
+    );
+
     res.json({
       username,
       year: 2025,
-      totalPlays: filteredPlays.length,
-      plays: filteredPlays,
+      totalPlays: finalPlays.length,
+      plays: finalPlays,
     });
   } catch (error) {
     console.error("Error fetching user plays:", error.message);
