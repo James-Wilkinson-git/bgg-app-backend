@@ -686,6 +686,7 @@ app.get("/api/proxy-image", async (req, res) => {
 
     res.set("Content-Type", response.headers["content-type"]);
     res.set("Cache-Control", "public, max-age=86400");
+    res.set("Access-Control-Allow-Origin", "*");
     res.send(response.data);
   } catch (error) {
     console.error("Failed to proxy image:", error.message);
