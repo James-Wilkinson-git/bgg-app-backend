@@ -501,22 +501,28 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
       return acc;
     }, {});
 
-    // Get unique game IDs from plays
-    const gameIds = [
-      ...new Set(plays.map((play) => parseInt(play.item.objectid))),
-    ];
+    // Get game IDs with play counts
+    const gamePlayCounts = {};
+    plays.forEach((play) => {
+      const gameId = parseInt(play.item.objectid);
+      gamePlayCounts[gameId] =
+        (gamePlayCounts[gameId] || 0) + parseInt(play.quantity);
+    });
+
+    const gameIds = Object.keys(gamePlayCounts).map((id) => parseInt(id));
 
     // Fetch game details to get publication years
     const gameDetails = await gamesCollection
       .find({ id: { $in: gameIds } })
       .toArray();
 
-    // Count publication years
+    // Count publication years weighted by play count
     const yearCounts = {};
     gameDetails.forEach((game) => {
       const year = game.yearPublished;
-      if (year && year !== "N/A") {
-        yearCounts[year] = (yearCounts[year] || 0) + 1;
+      if (year && year !== "N/A" && !isNaN(parseInt(year))) {
+        const playCount = gamePlayCounts[game.id] || 1;
+        yearCounts[year] = (yearCounts[year] || 0) + playCount;
       }
     });
 
@@ -526,14 +532,12 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
     Object.entries(yearCounts).forEach(([year, count]) => {
       if (count > maxCount) {
         maxCount = count;
-        mostCommonYear = year;
+        mostCommonYear = parseInt(year);
       }
     });
 
     // Calculate "board gamer age" (2025 - most common year)
-    const boardGamerAge = mostCommonYear
-      ? 2025 - parseInt(mostCommonYear)
-      : null;
+    const boardGamerAge = mostCommonYear ? 2025 - mostCommonYear : null;
 
     res.json({
       username,
