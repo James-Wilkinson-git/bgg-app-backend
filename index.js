@@ -356,6 +356,181 @@ app.get("/api/plays/:username", async (req, res) => {
   }
 });
 
+// Analytics: Get user's most played games in 2025 with mechanics, categories, and publishers
+app.get("/api/analytics/:username/most-played", async (req, res) => {
+  try {
+    const { username } = req.params;
+
+    // Get most played games
+    const mostPlayed = await playsCollection
+      .aggregate([
+        { $match: { username, year: 2025 } },
+        {
+          $group: {
+            _id: "$item.objectid",
+            gameName: { $first: "$item.name" },
+            playCount: { $sum: { $toInt: "$quantity" } },
+            totalMinutes: { $sum: { $toInt: "$length" } },
+          },
+        },
+        { $sort: { playCount: -1 } },
+        { $limit: 10 },
+      ])
+      .toArray();
+
+    // Get game IDs from most played
+    const gameIds = mostPlayed.map((game) => parseInt(game._id));
+
+    // Fetch full game details to get mechanics, categories, and publishers
+    const gameDetails = await gamesCollection
+      .find({ id: { $in: gameIds } })
+      .toArray();
+
+    // Create a map for quick lookup
+    const gameDetailsMap = {};
+    gameDetails.forEach((game) => {
+      gameDetailsMap[game.id] = game;
+    });
+
+    // Enhance most played with full details
+    const enhancedMostPlayed = mostPlayed.map((game) => {
+      const details = gameDetailsMap[parseInt(game._id)];
+      return {
+        gameId: game._id,
+        gameName: game.gameName,
+        playCount: game.playCount,
+        totalHours: Math.round((game.totalMinutes / 60) * 10) / 10,
+        mechanics: details?.mechanics || [],
+        categories: details?.categories || [],
+        publisher: details?.publisher || [],
+      };
+    });
+
+    // Calculate most popular mechanics
+    const mechanicsCount = {};
+    gameDetails.forEach((game) => {
+      game.mechanics?.forEach((mechanic) => {
+        mechanicsCount[mechanic] = (mechanicsCount[mechanic] || 0) + 1;
+      });
+    });
+    const topMechanics = Object.entries(mechanicsCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([mechanic, count]) => ({ mechanic, count }));
+
+    // Calculate most popular categories (themes)
+    const categoriesCount = {};
+    gameDetails.forEach((game) => {
+      game.categories?.forEach((category) => {
+        categoriesCount[category] = (categoriesCount[category] || 0) + 1;
+      });
+    });
+    const topCategories = Object.entries(categoriesCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([category, count]) => ({ category, count }));
+
+    // Calculate most popular publishers
+    const publishersCount = {};
+    gameDetails.forEach((game) => {
+      game.publisher?.forEach((publisher) => {
+        publishersCount[publisher] = (publishersCount[publisher] || 0) + 1;
+      });
+    });
+    const topPublishers = Object.entries(publishersCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([publisher, count]) => ({ publisher, count }));
+
+    res.json({
+      username,
+      mostPlayed: enhancedMostPlayed,
+      topMechanics,
+      topCategories,
+      topPublishers,
+    });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ error: "Failed to fetch analytics", message: error.message });
+  }
+});
+
+// Analytics: Get user's stats summary
+app.get("/api/analytics/:username/stats", async (req, res) => {
+  try {
+    const { username } = req.params;
+
+    const plays = await playsCollection
+      .find({ username, year: 2025 })
+      .toArray();
+
+    const totalPlays = plays.reduce(
+      (sum, play) => sum + parseInt(play.quantity),
+      0
+    );
+    const totalMinutes = plays.reduce(
+      (sum, play) => sum + (parseInt(play.length) || 0),
+      0
+    );
+    const uniqueGames = new Set(plays.map((play) => play.item.objectid)).size;
+
+    // Plays by month
+    const playsByMonth = plays.reduce((acc, play) => {
+      const month = play.date.substring(0, 7); // YYYY-MM
+      acc[month] = (acc[month] || 0) + parseInt(play.quantity);
+      return acc;
+    }, {});
+
+    res.json({
+      username,
+      year: 2025,
+      totalPlays,
+      uniqueGames,
+      totalHours: Math.round((totalMinutes / 60) * 10) / 10,
+      playsByMonth,
+    });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ error: "Failed to fetch stats", message: error.message });
+  }
+});
+
+// Analytics: Get popular games across all users
+app.get("/api/analytics/popular-games", async (req, res) => {
+  try {
+    const popularGames = await playsCollection
+      .aggregate([
+        { $match: { year: 2025 } },
+        {
+          $group: {
+            _id: "$item.objectid",
+            gameName: { $first: "$item.name" },
+            playCount: { $sum: { $toInt: "$quantity" } },
+            uniquePlayers: { $addToSet: "$username" },
+          },
+        },
+        {
+          $project: {
+            gameName: 1,
+            playCount: 1,
+            playerCount: { $size: "$uniquePlayers" },
+          },
+        },
+        { $sort: { playCount: -1 } },
+        { $limit: 20 },
+      ])
+      .toArray();
+
+    res.json({ popularGames });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ error: "Failed to fetch popular games", message: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
 });
