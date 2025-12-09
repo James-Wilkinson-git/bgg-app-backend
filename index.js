@@ -450,12 +450,15 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
       .slice(0, 10)
       .map(([category, count]) => ({ category, count }));
 
-    // Calculate most popular publishers
+    // Calculate most popular publishers (using primary/first publisher only)
     const publishersCount = {};
     gameDetails.forEach((game) => {
-      game.publisher?.forEach((publisher) => {
-        publishersCount[publisher] = (publishersCount[publisher] || 0) + 1;
-      });
+      // Only count the first/primary publisher to avoid confusion
+      const primaryPublisher = game.publisher?.[0];
+      if (primaryPublisher) {
+        publishersCount[primaryPublisher] =
+          (publishersCount[primaryPublisher] || 0) + 1;
+      }
     });
     const topPublishers = Object.entries(publishersCount)
       .sort((a, b) => b[1] - a[1])
@@ -498,12 +501,48 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
       return acc;
     }, {});
 
+    // Get unique game IDs from plays
+    const gameIds = [
+      ...new Set(plays.map((play) => parseInt(play.item.objectid))),
+    ];
+
+    // Fetch game details to get publication years
+    const gameDetails = await gamesCollection
+      .find({ id: { $in: gameIds } })
+      .toArray();
+
+    // Count publication years
+    const yearCounts = {};
+    gameDetails.forEach((game) => {
+      const year = game.yearPublished;
+      if (year && year !== "N/A") {
+        yearCounts[year] = (yearCounts[year] || 0) + 1;
+      }
+    });
+
+    // Find most common year
+    let mostCommonYear = null;
+    let maxCount = 0;
+    Object.entries(yearCounts).forEach(([year, count]) => {
+      if (count > maxCount) {
+        maxCount = count;
+        mostCommonYear = year;
+      }
+    });
+
+    // Calculate "board gamer age" (2025 - most common year)
+    const boardGamerAge = mostCommonYear
+      ? 2025 - parseInt(mostCommonYear)
+      : null;
+
     res.json({
       username,
       year: 2025,
       totalPlays,
       uniqueGames,
       playsByMonth,
+      mostCommonYear,
+      boardGamerAge,
     });
   } catch (error) {
     res
