@@ -669,6 +669,30 @@ app.get("/api/analytics/popular-games", async (req, res) => {
   }
 });
 
+// Image proxy endpoint to bypass CORS
+app.get("/api/proxy-image", async (req, res) => {
+  try {
+    const { url } = req.query;
+    if (!url) {
+      return res.status(400).send("URL parameter is required");
+    }
+
+    const response = await axios.get(url, {
+      responseType: "arraybuffer",
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
+
+    res.set("Content-Type", response.headers["content-type"]);
+    res.set("Cache-Control", "public, max-age=86400");
+    res.send(response.data);
+  } catch (error) {
+    console.error("Failed to proxy image:", error.message);
+    res.status(500).send("Failed to fetch image");
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
 });
