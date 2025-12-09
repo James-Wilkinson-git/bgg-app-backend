@@ -175,13 +175,18 @@ app.get("/api/scrape", async (req, res) => {
 app.get("/api/plays/:username", async (req, res) => {
   try {
     const { username } = req.params;
-    const { refetch } = req.query;
-    console.log(`Fetching 2025 plays for user: ${username}`);
+    const { refetch, excludeBGA } = req.query;
+    console.log(
+      `Fetching 2025 plays for user: ${username}, excludeBGA: ${excludeBGA}`
+    );
 
     // Check if plays already exist for this user
-    const existingPlays = await playsCollection
-      .find({ username, year: 2025 })
-      .toArray();
+    const queryCriteria = { username, year: 2025 };
+    if (excludeBGA === "true") {
+      queryCriteria.location = { $ne: "Board Game Arena" };
+    }
+
+    const existingPlays = await playsCollection.find(queryCriteria).toArray();
 
     if (existingPlays.length > 0 && refetch !== "true") {
       console.log(
@@ -281,12 +286,12 @@ app.get("/api/plays/:username", async (req, res) => {
       await playsCollection.deleteMany({ username, year: 2025 });
       await playsCollection.insertMany(playsWithUsername);
       console.log(
-        `Saved ${allPlays.length} plays to MongoDB for user ${username}`
+        `Saved ${filteredPlays.length} plays to MongoDB for user ${username}`
       );
 
       // Extract unique game IDs from plays
       const gameIds = [
-        ...new Set(allPlays.map((play) => parseInt(play.item.objectid))),
+        ...new Set(filteredPlays.map((play) => parseInt(play.item.objectid))),
       ];
       console.log(`Found ${gameIds.length} unique games in plays`);
 
