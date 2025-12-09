@@ -535,7 +535,22 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
 
     console.log(`Year counts for ${username}:`, yearCounts);
 
-    // Find most common year
+    // Calculate average game age (weighted by play count)
+    let totalWeightedAge = 0;
+    let totalPlaysWithYear = 0;
+
+    Object.entries(yearCounts).forEach(([year, count]) => {
+      const age = 2025 - parseInt(year);
+      totalWeightedAge += age * count;
+      totalPlaysWithYear += count;
+    });
+
+    const averageGameAge =
+      totalPlaysWithYear > 0
+        ? Math.round(totalWeightedAge / totalPlaysWithYear)
+        : null;
+
+    // Also find most common year for additional context
     let mostCommonYear = null;
     let maxCount = 0;
     Object.entries(yearCounts).forEach(([year, count]) => {
@@ -545,10 +560,9 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
       }
     });
 
-    console.log(`Most common year for ${username}: ${mostCommonYear}`);
-
-    // Calculate "board gamer age" (2025 - most common year)
-    const boardGamerAge = mostCommonYear ? 2025 - mostCommonYear : null;
+    console.log(
+      `Average game age for ${username}: ${averageGameAge}, Most common year: ${mostCommonYear}`
+    );
 
     res.json({
       username,
@@ -556,8 +570,8 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
       totalPlays,
       uniqueGames,
       playsByMonth,
+      averageGameAge,
       mostCommonYear,
-      boardGamerAge,
     });
   } catch (error) {
     res
