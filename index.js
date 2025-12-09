@@ -15,14 +15,34 @@ const PORT = process.env.PORT || 4000;
 
 app.use(cors());
 
-// Configure MongoDB client
-const mongoClient = new MongoClient(process.env.MONGODB_URI);
+// Configure MongoDB client - reuse the same instance
+const mongoClient = new MongoClient(process.env.MONGODB_URI, {
+  maxPoolSize: 10,
+  minPoolSize: 5,
+  maxIdleTimeMS: 30000,
+});
 
-await mongoClient.connect();
-const db = mongoClient.db("bgg");
-const gamesCollection = db.collection("games");
-const gameIds2025 = db.collection("2025games");
-const playsCollection = db.collection("plays");
+// Connect to MongoDB
+let db, gamesCollection, gameIds2025, playsCollection;
+
+try {
+  await mongoClient.connect();
+  console.log("Connected to MongoDB");
+  db = mongoClient.db("bgg");
+  gamesCollection = db.collection("games");
+  gameIds2025 = db.collection("2025games");
+  playsCollection = db.collection("plays");
+} catch (error) {
+  console.error("Failed to connect to MongoDB:", error);
+  process.exit(1);
+}
+
+// Graceful shutdown
+process.on("SIGINT", async () => {
+  console.log("Closing MongoDB connection...");
+  await mongoClient.close();
+  process.exit(0);
+});
 
 app.get("/api/games", async (req, res) => {
   try {
