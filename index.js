@@ -256,10 +256,22 @@ app.get("/api/plays/:username", async (req, res) => {
       `Total plays found for ${username} in 2025: ${allPlays.length}`
     );
 
+    // Filter out Board Game Arena plays if requested
+    const filteredPlays =
+      excludeBGA === "true"
+        ? allPlays.filter((play) => play.location !== "Board Game Arena")
+        : allPlays;
+
+    console.log(
+      `After BGA filter: ${filteredPlays.length} plays (excluded ${
+        allPlays.length - filteredPlays.length
+      } BGA plays)`
+    );
+
     // Save plays to MongoDB
-    if (allPlays.length > 0) {
+    if (filteredPlays.length > 0) {
       // Add username to each play document
-      const playsWithUsername = allPlays.map((play) => ({
+      const playsWithUsername = filteredPlays.map((play) => ({
         ...play,
         username,
         year: 2025,
@@ -365,8 +377,8 @@ app.get("/api/plays/:username", async (req, res) => {
     res.json({
       username,
       year: 2025,
-      totalPlays: allPlays.length,
-      plays: allPlays,
+      totalPlays: filteredPlays.length,
+      plays: filteredPlays,
     });
   } catch (error) {
     console.error("Error fetching user plays:", error.message);
@@ -380,11 +392,18 @@ app.get("/api/plays/:username", async (req, res) => {
 app.get("/api/analytics/:username/most-played", async (req, res) => {
   try {
     const { username } = req.params;
+    const { excludeBGA } = req.query;
+
+    // Build match criteria
+    const matchCriteria = { username, year: 2025 };
+    if (excludeBGA === "true") {
+      matchCriteria.location = { $ne: "Board Game Arena" };
+    }
 
     // Get most played games
     const mostPlayed = await playsCollection
       .aggregate([
-        { $match: { username, year: 2025 } },
+        { $match: matchCriteria },
         {
           $group: {
             _id: "$item.objectid",
@@ -483,10 +502,15 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
 app.get("/api/analytics/:username/stats", async (req, res) => {
   try {
     const { username } = req.params;
+    const { excludeBGA } = req.query;
 
-    const plays = await playsCollection
-      .find({ username, year: 2025 })
-      .toArray();
+    // Build query criteria
+    const queryCriteria = { username, year: 2025 };
+    if (excludeBGA === "true") {
+      queryCriteria.location = { $ne: "Board Game Arena" };
+    }
+
+    const plays = await playsCollection.find(queryCriteria).toArray();
 
     const totalPlays = plays.reduce(
       (sum, play) => sum + parseInt(play.quantity),
