@@ -539,14 +539,20 @@ export async function generateCardImage(cardType, username, data) {
   try {
     await page.setViewport({ width: 1080, height: 1920 });
 
-    // Set content - network idle ensures fonts are loaded
+    // Set content - domcontentloaded is faster than networkidle0
     await page.setContent(html, {
-      waitUntil: "networkidle0",
-      timeout: 8000,
+      waitUntil: "domcontentloaded",
+      timeout: 5000,
     });
 
-    // Brief render delay (reduced from 1000ms)
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Wait for fonts to load with timeout
+    await Promise.race([
+      page.evaluateHandle("document.fonts.ready"),
+      new Promise((resolve) => setTimeout(resolve, 500)),
+    ]);
+
+    // Minimal render delay
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     const screenshot = await page.screenshot({
       type: "png",
