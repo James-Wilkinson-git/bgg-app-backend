@@ -539,20 +539,38 @@ export async function generateCardImage(cardType, username, data) {
   try {
     await page.setViewport({ width: 1080, height: 1920 });
 
-    // Set content - domcontentloaded is faster than networkidle0
+    // Set content immediately
     await page.setContent(html, {
       waitUntil: "domcontentloaded",
-      timeout: 5000,
+      timeout: 3000,
     });
 
-    // Wait for fonts to load with timeout
-    await Promise.race([
-      page.evaluateHandle("document.fonts.ready"),
-      new Promise((resolve) => setTimeout(resolve, 500)),
+    // Wait for fonts and images in parallel
+    await Promise.all([
+      // Fonts with short timeout
+      Promise.race([
+        page.evaluateHandle("document.fonts.ready"),
+        new Promise((resolve) => setTimeout(resolve, 200)),
+      ]),
+      // Images only for cards that have them
+      cardType === "most-played" || cardType === "community"
+        ? Promise.race([
+            page.evaluate(() => {
+              return Promise.all(
+                Array.from(document.images)
+                  .filter((img) => !img.complete)
+                  .map(
+                    (img) =>
+                      new Promise((resolve) => {
+                        img.onload = img.onerror = resolve;
+                      })
+                  )
+              );
+            }),
+            new Promise((resolve) => setTimeout(resolve, 1500)),
+          ])
+        : Promise.resolve(),
     ]);
-
-    // Minimal render delay
-    await new Promise((resolve) => setTimeout(resolve, 100));
 
     const screenshot = await page.screenshot({
       type: "png",
