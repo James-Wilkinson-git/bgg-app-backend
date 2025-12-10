@@ -405,10 +405,18 @@ function generateCardHTML(cardType, username, data) {
                 (game, index) => `
               <div class="game-card">
                 <div class="game-card-rank">#${index + 1}</div>
-                ${game.thumbnail ? `<img src="https://bgg-app-backend-1.onrender.com/api/proxy-image?url=${encodeURIComponent(game.thumbnail)}" alt="${game.gameName}" class="game-card-thumbnail" />` : ''}
+                ${
+                  game.thumbnail
+                    ? `<img src="https://bgg-app-backend-1.onrender.com/api/proxy-image?url=${encodeURIComponent(
+                        game.thumbnail
+                      )}" alt="${game.gameName}" class="game-card-thumbnail" />`
+                    : ""
+                }
                 <div class="game-card-content">
                   <div class="game-card-name">${game.gameName}</div>
-                  <div class="game-card-plays">🎯 ${game.playCount} plays • ${game.playerCount} players</div>
+                  <div class="game-card-plays">🎯 ${game.playCount} plays • ${
+                  game.playerCount
+                } players</div>
                 </div>
               </div>
             `
