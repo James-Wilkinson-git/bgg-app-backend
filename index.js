@@ -672,29 +672,25 @@ app.get("/api/analytics/popular-games", async (req, res) => {
       .toArray();
 
     // Fetch game details for thumbnails with projection
-    const gameIds = popularGames.map((g) => g._id.toString());
+    const gameIds = popularGames.map((g) => parseInt(g._id));
     const gameDetails = await gamesCollection
       .find(
-        {
-          $or: [
-            { gameId: { $in: gameIds.map((id) => parseInt(id)) } },
-            { id: { $in: gameIds } },
-          ],
-        },
-        { projection: { id: 1, gameId: 1, thumbnail: 1 } }
+        { id: { $in: gameIds } },
+        { projection: { id: 1, thumbnail: 1 } }
       )
       .toArray();
 
+    // Create a lookup map for faster merging
+    const thumbnailMap = {};
+    gameDetails.forEach((game) => {
+      thumbnailMap[game.id] = game.thumbnail;
+    });
+
     // Merge details
     const gamesWithThumbnails = popularGames.map((game) => {
-      const details = gameDetails.find(
-        (d) =>
-          d.gameId?.toString() === game._id.toString() ||
-          d.id?.toString() === game._id.toString()
-      );
       return {
         ...game,
-        thumbnail: details?.thumbnail || null,
+        thumbnail: thumbnailMap[parseInt(game._id)] || null,
       };
     });
 
