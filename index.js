@@ -218,12 +218,21 @@ app.get("/api/plays/:username", async (req, res) => {
     const username = req.params.username.trim().toLowerCase();
     const { refetch } = req.query;
 
+    console.log(
+      `[BGG WRAPPED] Fetching plays for user: ${username} (refetch=${
+        refetch === "true"
+      })`
+    );
+
     // Check if plays already exist for this user (check all plays, not filtered)
     const existingPlays = await playsCollection
       .find({ username, year: 2025 })
       .toArray();
 
     if (existingPlays.length > 0 && refetch !== "true") {
+      console.log(
+        `[BGG WRAPPED] Returning cached plays for user: ${username} (total: ${existingPlays.length})`
+      );
       return res.json({
         username,
         year: 2025,
@@ -239,6 +248,9 @@ app.get("/api/plays/:username", async (req, res) => {
 
     while (hasMorePages) {
       const url = `https://boardgamegeek.com/xmlapi2/plays?username=${username}&mindate=2025-01-01&maxdate=2025-12-31&page=${page}`;
+      console.log(
+        `[BGG WRAPPED] Requesting BGG API for user: ${username}, page: ${page}`
+      );
 
       const response = await axios.get(url, {
         headers: {
@@ -285,6 +297,10 @@ app.get("/api/plays/:username", async (req, res) => {
         hasMorePages = false;
       }
     }
+
+    console.log(
+      `[BGG WRAPPED] Finished fetching plays for user: ${username}. Total plays: ${allPlays.length}`
+    );
 
     // Save ALL plays to MongoDB (no filtering at save time)
     if (allPlays.length > 0) {
