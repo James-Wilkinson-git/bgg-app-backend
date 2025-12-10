@@ -674,15 +674,10 @@ app.get("/api/analytics/popular-games", async (req, res) => {
   try {
     const cacheKey = "popular-games:all";
 
-    // Allow cache busting with ?nocache=true
-    const skipCache = req.query.nocache === "true";
-
-    // Check cache first
-    if (!skipCache) {
-      const cached = getFromCache(cacheKey);
-      if (cached) {
-        return res.json(cached);
-      }
+    // Check cache first (shorter TTL for community data - 1 minute)
+    const cached = analyticsCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < 60 * 1000) {
+      return res.json(cached.data);
     }
 
     const popularGames = await playsCollection
