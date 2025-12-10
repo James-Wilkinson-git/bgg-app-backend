@@ -195,10 +195,8 @@ app.get("/api/scrape", async (req, res) => {
 app.get("/api/plays/:username", async (req, res) => {
   try {
     const { username } = req.params;
-    const { refetch, excludeBGA } = req.query;
-    console.log(
-      `Fetching 2025 plays for user: ${username}, excludeBGA: ${excludeBGA}`
-    );
+    const { refetch } = req.query;
+    console.log(`Fetching 2025 plays for user: ${username}`);
 
     // Check if plays already exist for this user (check all plays, not filtered)
     const existingPlays = await playsCollection
@@ -207,24 +205,14 @@ app.get("/api/plays/:username", async (req, res) => {
 
     if (existingPlays.length > 0 && refetch !== "true") {
       console.log(
-        `Found ${existingPlays.length} cached plays for ${username}, applying filter`
-      );
-
-      // Apply BGA filter when returning cached data
-      const filteredPlays =
-        excludeBGA === "true"
-          ? existingPlays.filter((play) => play.location !== "Board Game Arena")
-          : existingPlays;
-
-      console.log(
-        `Returning ${filteredPlays.length} plays (excludeBGA: ${excludeBGA})`
+        `Found ${existingPlays.length} cached plays for ${username}, returning cached data`
       );
 
       return res.json({
         username,
         year: 2025,
-        totalPlays: filteredPlays.length,
-        plays: filteredPlays,
+        totalPlays: existingPlays.length,
+        plays: existingPlays,
         cached: true,
       });
     }
@@ -258,7 +246,7 @@ app.get("/api/plays/:username", async (req, res) => {
           length: play.$.length,
           incomplete: play.$.incomplete === "1",
           nowinstats: play.$.nowinstats === "1",
-          location: play.$.location,
+          location: play.$.location || "",
           item: {
             name: play.item[0].$.name,
             objecttype: play.item[0].$.objecttype,
@@ -395,15 +383,11 @@ app.get("/api/plays/:username", async (req, res) => {
       console.log(`Fetched and saved ${newGames.length} new games`);
     }
 
-    // Retrieve plays from database with BGA filter applied
-    const queryCriteria = { username, year: 2025 };
-    if (excludeBGA === "true") {
-      queryCriteria.location = { $ne: "Board Game Arena" };
-    }
-    const finalPlays = await playsCollection.find(queryCriteria).toArray();
-    console.log(
-      `Returning ${finalPlays.length} plays for ${username} (excludeBGA: ${excludeBGA})`
-    );
+    // Retrieve plays from database
+    const finalPlays = await playsCollection
+      .find({ username, year: 2025 })
+      .toArray();
+    console.log(`Returning ${finalPlays.length} plays for ${username}`);
 
     res.json({
       username,
@@ -423,13 +407,9 @@ app.get("/api/plays/:username", async (req, res) => {
 app.get("/api/analytics/:username/most-played", async (req, res) => {
   try {
     const { username } = req.params;
-    const { excludeBGA } = req.query;
 
     // Build match criteria
     const matchCriteria = { username, year: 2025 };
-    if (excludeBGA === "true") {
-      matchCriteria.location = { $ne: "Board Game Arena" };
-    }
 
     // Get most played games
     const mostPlayed = await playsCollection
@@ -533,15 +513,10 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
 app.get("/api/analytics/:username/stats", async (req, res) => {
   try {
     const { username } = req.params;
-    const { excludeBGA } = req.query;
 
-    // Build query criteria
-    const queryCriteria = { username, year: 2025 };
-    if (excludeBGA === "true") {
-      queryCriteria.location = { $ne: "Board Game Arena" };
-    }
-
-    const plays = await playsCollection.find(queryCriteria).toArray();
+    const plays = await playsCollection
+      .find({ username, year: 2025 })
+      .toArray();
 
     const totalPlays = plays.reduce(
       (sum, play) => sum + parseInt(play.quantity),
