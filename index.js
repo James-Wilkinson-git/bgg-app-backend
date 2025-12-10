@@ -669,6 +669,40 @@ app.get("/api/proxy-image", async (req, res) => {
   }
 });
 
+// Card image generation endpoints
+import { generateCardImage } from "./cardGenerator.js";
+
+app.post("/api/generate-card/:cardType", async (req, res) => {
+  try {
+    const { cardType } = req.params;
+    const { username, data } = req.body;
+
+    if (!username || !data) {
+      return res.status(400).json({ error: "Username and data are required" });
+    }
+
+    const validCardTypes = [
+      "stats",
+      "most-played",
+      "mechanics",
+      "categories",
+      "publishers",
+    ];
+    if (!validCardTypes.includes(cardType)) {
+      return res.status(400).json({ error: "Invalid card type" });
+    }
+
+    const imageBuffer = await generateCardImage(cardType, username, data);
+
+    res.set("Content-Type", "image/png");
+    res.set("Cache-Control", "public, max-age=3600");
+    res.send(imageBuffer);
+  } catch (error) {
+    console.error("Failed to generate card image:", error);
+    res.status(500).json({ error: "Failed to generate card image" });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
 });
