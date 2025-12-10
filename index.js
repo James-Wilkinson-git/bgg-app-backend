@@ -442,6 +442,8 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
             mechanics: 1,
             categories: 1,
             publisher: 1,
+            designer: 1,
+            artist: 1,
           },
         }
       )
