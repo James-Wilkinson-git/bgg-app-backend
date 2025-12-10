@@ -193,8 +193,8 @@ function generateCardHTML(cardType, username, data) {
       
       .game-card-rank {
         position: absolute;
-        top: 8px;
-        right: 8px;
+        top: 12px;
+        left: 12px;
         background: rgba(0, 0, 0, 0.6);
         color: white;
         font-size: 2em;
@@ -205,23 +205,10 @@ function generateCardHTML(cardType, username, data) {
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
       }
       
-      .game-card-image-wrapper {
-        height: 255px;
-        flex-shrink: 0;
-        position: relative;
-        overflow: hidden;
-      }
-      
-      .game-card-image {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        display: block;
-      }
-      
       .game-card-content {
         flex: 1;
-        padding: 10px;
+        padding: 20px;
+        padding-left: 70px;
         display: flex;
         flex-direction: column;
         justify-content: center;
@@ -359,14 +346,6 @@ function generateCardHTML(cardType, username, data) {
                 (game, index) => `
               <div class="game-card">
                 <div class="game-card-rank">#${index + 1}</div>
-                <div class="game-card-image-wrapper">
-                  <img
-                    src="${game.thumbnail || ""}"
-                    alt="${game.gameName}"
-                    class="game-card-image"
-                    crossorigin="anonymous"
-                  />
-                </div>
                 <div class="game-card-content">
                   <div class="game-card-name">${game.gameName}</div>
                   <div class="game-card-plays">🎯 ${game.playCount} plays</div>
@@ -493,21 +472,15 @@ export async function generateCardImage(cardType, username, data) {
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1080, height: 1920 });
-    await page.setContent(html, { waitUntil: "networkidle0" });
-
-    // Wait for images to load
-    await page.evaluate(() => {
-      return Promise.all(
-        Array.from(document.images)
-          .filter((img) => !img.complete)
-          .map(
-            (img) =>
-              new Promise((resolve) => {
-                img.onload = img.onerror = resolve;
-              })
-          )
-      );
+    
+    // Set content with a simpler wait strategy and timeout
+    await page.setContent(html, { 
+      waitUntil: "domcontentloaded",
+      timeout: 10000 
     });
+
+    // Give images a brief moment to load, but don't wait indefinitely
+    await page.waitForTimeout(500);
 
     const screenshot = await page.screenshot({
       type: "png",
