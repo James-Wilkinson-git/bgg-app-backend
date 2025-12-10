@@ -700,7 +700,12 @@ app.post("/api/generate-card/:cardType", async (req, res) => {
     res.send(imageBuffer);
   } catch (error) {
     console.error("Failed to generate card image:", error);
-    res.status(500).json({ error: "Failed to generate card image" });
+    console.error("Error stack:", error.stack);
+    res.status(500).json({
+      error: "Failed to generate card image",
+      message: error.message,
+      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
   }
 });
 
