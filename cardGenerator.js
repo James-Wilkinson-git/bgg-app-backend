@@ -24,7 +24,7 @@ function generateCardHTML(cardType, username, data) {
         display: flex;
         flex-direction: column;
         font-size: 20px;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Noto Color Emoji", sans-serif;
       }
       
       .wrapped-card::before {
@@ -342,6 +342,7 @@ function generateCardHTML(cardType, username, data) {
           </div>
           <div class="games-showcase">
             ${data
+              .slice(0, 5)
               .map(
                 (game, index) => `
               <div class="game-card">
@@ -449,6 +450,9 @@ function generateCardHTML(cardType, username, data) {
     <html>
       <head>
         <meta charset="UTF-8">
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
+        </style>
         ${styles}
       </head>
       <body>
