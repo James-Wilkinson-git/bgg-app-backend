@@ -1,6 +1,21 @@
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
 
+// Reuse browser instance for performance
+let browserInstance = null;
+
+async function getBrowser() {
+  if (!browserInstance || !browserInstance.isConnected()) {
+    browserInstance = await puppeteer.launch({
+      args: [...chromium.args, "--disable-dev-shm-usage", "--no-sandbox"],
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
+    });
+  }
+  return browserInstance;
+}
+
 // HTML template generator for cards
 function generateCardHTML(cardType, username, data) {
   const styles = `
@@ -24,7 +39,7 @@ function generateCardHTML(cardType, username, data) {
         display: flex;
         flex-direction: column;
         font-size: 20px;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Noto Color Emoji", sans-serif;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Noto Color Emoji", sans-serif;
       }
       
       .wrapped-card::before {
@@ -450,9 +465,9 @@ function generateCardHTML(cardType, username, data) {
     <html>
       <head>
         <meta charset="UTF-8">
-        <style>
-          @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
-        </style>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Color+Emoji&display=swap" rel="stylesheet">
         ${styles}
       </head>
       <body>
@@ -465,34 +480,30 @@ function generateCardHTML(cardType, username, data) {
 // Generate image from HTML
 export async function generateCardImage(cardType, username, data) {
   const html = generateCardHTML(cardType, username, data);
+  const browser = await getBrowser();
 
-  const browser = await puppeteer.launch({
-    args: chromium.args,
-    defaultViewport: chromium.defaultViewport,
-    executablePath: await chromium.executablePath(),
-    headless: chromium.headless,
-  });
+  const page = await browser.newPage();
 
   try {
-    const page = await browser.newPage();
     await page.setViewport({ width: 1080, height: 1920 });
 
-    // Set content with a simpler wait strategy and timeout
+    // Set content - network idle ensures fonts are loaded
     await page.setContent(html, {
-      waitUntil: "domcontentloaded",
-      timeout: 10000,
+      waitUntil: "networkidle0",
+      timeout: 8000,
     });
 
-    // Give a brief moment for rendering
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Brief render delay (reduced from 1000ms)
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     const screenshot = await page.screenshot({
       type: "png",
       fullPage: false,
+      optimizeForSpeed: true,
     });
 
     return screenshot;
   } finally {
-    await browser.close();
+    await page.close();
   }
 }
