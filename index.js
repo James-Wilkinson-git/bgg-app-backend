@@ -508,12 +508,43 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
       .slice(0, 10)
       .map(([publisher, count]) => ({ publisher, count }));
 
+    // Calculate most popular designers (using primary/first designer only)
+    const designersCount = {};
+    gameDetails.forEach((game) => {
+      // Only count the first/primary designer to avoid confusion
+      const primaryDesigner = game.designer?.[0];
+      if (primaryDesigner && primaryDesigner !== "(Uncredited)") {
+        designersCount[primaryDesigner] =
+          (designersCount[primaryDesigner] || 0) + 1;
+      }
+    });
+    const topDesigners = Object.entries(designersCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([designer, count]) => ({ designer, count }));
+
+    // Calculate most popular artists (using primary/first artist only)
+    const artistsCount = {};
+    gameDetails.forEach((game) => {
+      // Only count the first/primary artist to avoid confusion
+      const primaryArtist = game.artist?.[0];
+      if (primaryArtist && primaryArtist !== "(Uncredited)") {
+        artistsCount[primaryArtist] = (artistsCount[primaryArtist] || 0) + 1;
+      }
+    });
+    const topArtists = Object.entries(artistsCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([artist, count]) => ({ artist, count }));
+
     const result = {
       username,
       mostPlayed: enhancedMostPlayed,
       topMechanics,
       topCategories,
       topPublishers,
+      topDesigners,
+      topArtists,
     };
 
     // Cache the result
