@@ -479,8 +479,8 @@ export async function generateCardImage(cardType, username, data) {
       timeout: 10000,
     });
 
-    // Give images a brief moment to load, but don't wait indefinitely
-    await page.waitForTimeout(500);
+    // Give a brief moment for rendering
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     const screenshot = await page.screenshot({
       type: "png",
