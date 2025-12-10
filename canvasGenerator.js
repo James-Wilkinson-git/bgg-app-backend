@@ -10,11 +10,26 @@ async function loadImageWithCache(url) {
   }
 
   try {
-    const image = await loadImage(url);
+    // Fetch image with proper headers
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        Accept:
+          "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    const image = await loadImage(Buffer.from(buffer));
     imageCache.set(url, image);
     return image;
   } catch (error) {
-    console.error(`Failed to load image: ${url}`, error);
+    console.error(`Failed to load image: ${url}`, error.message);
     return null;
   }
 }
@@ -101,80 +116,101 @@ export async function generateStatsCard(username, data) {
   drawGradientBackground(ctx, "purple");
   drawRadialOverlays(ctx);
 
-  // Header
+  // Header - Year label with background pill
   ctx.textAlign = "center";
-  ctx.font = "900 60px Inter";
-  ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
-  drawRoundedRect(ctx, 350, 30, 380, 100, 50);
-  ctx.fill();
-  ctx.fillStyle = "#1a1a2e";
-  ctx.fillText("✨ 2025 ✨", 540, 95);
+  const yearText = "2025";
+  ctx.font = "bold 50px Arial";
+  const yearWidth = ctx.measureText(yearText).width;
+  const pillWidth = yearWidth + 100;
+  const pillHeight = 70;
+  const pillX = (1080 - pillWidth) / 2;
+  const pillY = 60;
 
-  ctx.font = "900 120px Inter";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+  drawRoundedRect(ctx, pillX, pillY, pillWidth, pillHeight, 35);
+  ctx.fill();
+
+  ctx.fillStyle = "#1a1a2e";
+  ctx.fillText(yearText, 540, pillY + 48);
+
+  // Title
+  ctx.font = "bold 90px Arial";
   ctx.fillStyle = "white";
   ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
   ctx.shadowBlur = 20;
-  ctx.fillText("🎲 Your Year in Games 🎲", 540, 250);
-
-  ctx.font = "700 75px Inter";
-  ctx.shadowBlur = 8;
-  ctx.fillText(username, 540, 350);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 3;
+  ctx.fillText("Your Year in Games", 540, 230);
   ctx.shadowBlur = 0;
+
+  // Username
+  ctx.font = "bold 65px Arial";
+  ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 2;
+  ctx.fillText(username, 540, 320);
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
 
   // Stats boxes
   const stats = [
-    { value: data.totalPlays, label: "TOTAL PLAYS" },
-    { value: data.uniqueGames, label: "UNIQUE GAMES" },
+    { value: data.totalPlays, label: "Total Plays" },
+    { value: data.uniqueGames, label: "Unique Games" },
   ];
 
   if (data.averageGameAge !== null && data.averageGameAge !== undefined) {
     stats.push({
       value: data.averageGameAge,
-      label: "AVERAGE GAME AGE",
+      label: "Average Game Age",
       sublabel:
         data.averageGameAge === 0
-          ? "Playing the hottest new releases! 🔥"
+          ? "Playing the hottest new releases!"
           : data.averageGameAge === 1
           ? "Playing games about 1 year old"
           : `Playing games about ${data.averageGameAge} years old`,
     });
   }
 
-  let yPos = 450;
-  const boxHeight = (1920 - 450 - 200) / stats.length - 30;
+  let yPos = 430;
+  const boxHeight = 360;
+  const gap = 40;
 
   stats.forEach((stat) => {
-    // Box background
+    // Box background with border
     ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
-    drawRoundedRect(ctx, 40, yPos, 1000, boxHeight, 20);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+    ctx.lineWidth = 3;
+    drawRoundedRect(ctx, 60, yPos, 960, boxHeight, 20);
     ctx.fill();
+    ctx.stroke();
 
     // Value
-    ctx.font = "900 105px Inter";
+    ctx.font = "bold 180px Arial";
     ctx.fillStyle = "#1a1a2e";
-    ctx.fillText(stat.value, 540, yPos + boxHeight / 2 - 10);
+    ctx.fillText(stat.value, 540, yPos + 180);
 
     // Label
-    ctx.font = "700 45px Inter";
+    ctx.font = "bold 42px Arial";
     ctx.fillStyle = "#2a2a3e";
-    ctx.fillText(stat.label, 540, yPos + boxHeight / 2 + 50);
+    ctx.fillText(stat.label, 540, yPos + 240);
 
     // Sublabel
     if (stat.sublabel) {
-      ctx.font = "500 30px Inter";
+      ctx.font = "500 32px Arial";
       ctx.fillStyle = "#3a3a4e";
-      ctx.fillText(stat.sublabel, 540, yPos + boxHeight / 2 + 90);
+      ctx.fillText(stat.sublabel, 540, yPos + 290);
     }
 
-    yPos += boxHeight + 30;
+    yPos += boxHeight + gap;
   });
 
   // Footer
-  ctx.font = "700 60px Inter";
+  ctx.font = "bold 46px Arial";
   ctx.fillStyle = "white";
   ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
   ctx.shadowBlur = 4;
-  ctx.fillText("🎲 bgwrapped.boardgaymesjames.com", 540, 1850);
+  ctx.fillText("bgwrapped.boardgaymesjames.com @boardgaymesjames", 540, 1830);
   ctx.shadowBlur = 0;
 
   return canvas.toBuffer("image/png");
@@ -188,69 +224,124 @@ export async function generateMostPlayedCard(username, games) {
   drawGradientBackground(ctx, "blue");
   drawRadialOverlays(ctx);
 
-  // Header
+  // Header - Year label
   ctx.textAlign = "center";
-  ctx.font = "900 60px Inter";
-  ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
-  drawRoundedRect(ctx, 350, 30, 380, 100, 50);
-  ctx.fill();
-  ctx.fillStyle = "#1a1a2e";
-  ctx.fillText("✨ 2025 ✨", 540, 95);
+  const yearText = "2025";
+  ctx.font = "bold 50px Arial";
+  const yearWidth = ctx.measureText(yearText).width;
+  const pillWidth = yearWidth + 100;
+  const pillHeight = 70;
+  const pillX = (1080 - pillWidth) / 2;
+  const pillY = 60;
 
-  ctx.font = "900 120px Inter";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+  drawRoundedRect(ctx, pillX, pillY, pillWidth, pillHeight, 35);
+  ctx.fill();
+
+  ctx.fillStyle = "#1a1a2e";
+  ctx.fillText(yearText, 540, pillY + 48);
+
+  // Title
+  ctx.font = "bold 90px Arial";
   ctx.fillStyle = "white";
   ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
   ctx.shadowBlur = 20;
-  ctx.fillText("🏆 Most Played Games 🏆", 540, 250);
-
-  ctx.font = "700 75px Inter";
-  ctx.shadowBlur = 8;
-  ctx.fillText(username, 540, 350);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 3;
+  ctx.fillText("Most Played", 540, 230);
   ctx.shadowBlur = 0;
+
+  // Username
+  ctx.font = "bold 65px Arial";
+  ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 2;
+  ctx.fillText(username, 540, 320);
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
 
   // Game cards
   const topGames = games.slice(0, 5);
-  let yPos = 400;
+  let yPos = 430;
+  const cardHeight = 240;
+  const gap = 30;
 
   for (let i = 0; i < topGames.length; i++) {
     const game = topGames[i];
-    const cardHeight = 140;
 
-    // Card background
+    // Card background with border
     ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
-    drawRoundedRect(ctx, 40, yPos, 1000, cardHeight, 18);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+    ctx.lineWidth = 2;
+    drawRoundedRect(ctx, 60, yPos, 960, cardHeight, 12);
     ctx.fill();
+    ctx.stroke();
 
-    // Rank badge
+    // Rank badge - top right
+    const rankBadgeSize = 70;
     ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-    drawRoundedRect(ctx, 52, yPos + 12, 70, 50, 8);
+    drawRoundedRect(ctx, 940, yPos + 15, rankBadgeSize, rankBadgeSize * 0.7, 6);
     ctx.fill();
-    ctx.font = "900 40px Inter";
+    ctx.font = "bold 42px Arial";
     ctx.fillStyle = "white";
     ctx.textAlign = "center";
-    ctx.fillText(`#${i + 1}`, 87, yPos + 48);
+    ctx.fillText(`#${i + 1}`, 975, yPos + 56);
+
+    // Load and draw game image on the left
+    if (game.thumbnail) {
+      try {
+        const img = await loadImageWithCache(game.thumbnail);
+        if (img) {
+          const imgWidth = cardHeight;
+          const imgHeight = cardHeight;
+
+          // Save context for clipping
+          ctx.save();
+          // Create rounded clip path for image
+          drawRoundedRect(ctx, 60, yPos, imgWidth, imgHeight, 12);
+          ctx.clip();
+
+          ctx.drawImage(img, 60, yPos, imgWidth, imgHeight);
+          ctx.restore();
+        }
+      } catch (e) {
+        console.log("Failed to load game image:", e);
+      }
+    }
+
+    // Game content - to the right of image
+    const contentX = 60 + cardHeight + 20;
+    const contentWidth = 960 - cardHeight - 40 - rankBadgeSize - 20;
 
     // Game name
-    ctx.font = "900 50px Inter";
+    ctx.font = "bold 56px Arial";
     ctx.fillStyle = "#1a1a2e";
     ctx.textAlign = "left";
-    ctx.fillText(game.gameName, 150, yPos + 60, 800);
+
+    // Wrap text if needed
+    const nameY = yPos + cardHeight / 2 - 20;
+    wrapText(ctx, game.gameName, contentX, nameY, contentWidth, 60);
 
     // Play count
-    ctx.font = "700 35px Inter";
+    ctx.font = "bold 42px Arial";
     ctx.fillStyle = "#3a3a4e";
-    ctx.fillText(`🎯 ${game.playCount} plays`, 150, yPos + 105);
+    ctx.fillText(
+      `${game.playCount} plays`,
+      contentX,
+      yPos + cardHeight / 2 + 50
+    );
 
-    yPos += cardHeight + 12;
+    yPos += cardHeight + gap;
   }
 
   // Footer
   ctx.textAlign = "center";
-  ctx.font = "700 60px Inter";
+  ctx.font = "bold 46px Arial";
   ctx.fillStyle = "white";
   ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
   ctx.shadowBlur = 4;
-  ctx.fillText("🎲 bgwrapped.boardgaymesjames.com", 540, 1850);
+  ctx.fillText("bgwrapped.boardgaymesjames.com @boardgaymesjames", 540, 1830);
   ctx.shadowBlur = 0;
 
   return canvas.toBuffer("image/png");
@@ -263,78 +354,100 @@ export async function generateMechanicsCard(username, mechanics) {
   drawGradientBackground(ctx, "green");
   drawRadialOverlays(ctx);
 
-  // Header
+  // Header - Year label
   ctx.textAlign = "center";
-  ctx.font = "900 60px Inter";
-  ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
-  drawRoundedRect(ctx, 350, 30, 380, 100, 50);
-  ctx.fill();
-  ctx.fillStyle = "#1a1a2e";
-  ctx.fillText("✨ 2025 ✨", 540, 95);
+  const yearText = "2025";
+  ctx.font = "bold 50px Arial";
+  const yearWidth = ctx.measureText(yearText).width;
+  const pillWidth = yearWidth + 100;
+  const pillHeight = 70;
+  const pillX = (1080 - pillWidth) / 2;
+  const pillY = 60;
 
-  ctx.font = "900 120px Inter";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+  drawRoundedRect(ctx, pillX, pillY, pillWidth, pillHeight, 35);
+  ctx.fill();
+
+  ctx.fillStyle = "#1a1a2e";
+  ctx.fillText(yearText, 540, pillY + 48);
+
+  // Title
+  ctx.font = "bold 90px Arial";
   ctx.fillStyle = "white";
   ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
   ctx.shadowBlur = 20;
-  ctx.fillText("⚙️ Favorite Mechanics ⚙️", 540, 250);
-
-  ctx.font = "700 75px Inter";
-  ctx.shadowBlur = 8;
-  ctx.fillText(username, 540, 350);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 3;
+  ctx.fillText("Fav Mechanics", 540, 230);
   ctx.shadowBlur = 0;
 
+  // Username
+  ctx.font = "bold 65px Arial";
+  ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 2;
+  ctx.fillText(username, 540, 320);
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+
   // Tags
-  let yPos = 450;
-  let xPos = 40;
-  const rowHeight = 100;
+  const topMechanics = mechanics.slice(0, 8);
+  let yPos = 430;
+  let xPos = 60;
+  const tagHeight = 90;
+  const gap = 20;
+  const maxWidth = 1080 - 120; // Account for padding
 
-  mechanics.forEach((item, index) => {
-    ctx.font = "800 55px Inter";
+  topMechanics.forEach((item) => {
+    ctx.font = "bold 48px Arial";
     const textWidth = ctx.measureText(item.mechanic).width;
-    const countWidth = ctx.measureText(item.count.toString()).width;
-    const tagWidth = textWidth + countWidth + 120;
+    const countText = item.count.toString();
+    const countWidth = ctx.measureText(countText).width;
+    const tagWidth = textWidth + countWidth + 110;
 
-    if (xPos + tagWidth > 1040) {
-      xPos = 40;
-      yPos += rowHeight;
+    // Check if tag fits on current row
+    if (xPos + tagWidth > maxWidth + 60) {
+      xPos = 60;
+      yPos += tagHeight + gap;
     }
 
-    // Tag background
+    // Tag background with border
     ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
-    drawRoundedRect(ctx, xPos, yPos, tagWidth, 80, 40);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+    ctx.lineWidth = 2;
+    drawRoundedRect(ctx, xPos, yPos, tagWidth, tagHeight, 45);
     ctx.fill();
+    ctx.stroke();
 
     // Text
     ctx.fillStyle = "#1a1a2e";
     ctx.textAlign = "left";
-    ctx.fillText(item.mechanic, xPos + 30, yPos + 55);
+    ctx.fillText(item.mechanic, xPos + 35, yPos + 60);
 
     // Count badge
+    const badgeX = xPos + textWidth + 55;
+    const badgeWidth = countWidth + 40;
     ctx.fillStyle = "rgba(26, 26, 46, 0.15)";
-    drawRoundedRect(
-      ctx,
-      xPos + textWidth + 50,
-      yPos + 20,
-      countWidth + 40,
-      40,
-      20
-    );
+    drawRoundedRect(ctx, badgeX, yPos + 20, badgeWidth, 50, 25);
     ctx.fill();
-    ctx.fillStyle = "#1a1a2e";
-    ctx.font = "900 50px Inter";
-    ctx.textAlign = "center";
-    ctx.fillText(item.count, xPos + textWidth + 70 + countWidth / 2, yPos + 52);
 
-    xPos += tagWidth + 20;
+    ctx.fillStyle = "#1a1a2e";
+    ctx.font = "bold 48px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(countText, badgeX + badgeWidth / 2, yPos + 60);
+
+    xPos += tagWidth + gap;
   });
 
   // Footer
   ctx.textAlign = "center";
-  ctx.font = "700 60px Inter";
+  ctx.font = "bold 46px Arial";
   ctx.fillStyle = "white";
   ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
   ctx.shadowBlur = 4;
-  ctx.fillText("🎲 bgwrapped.boardgaymesjames.com", 540, 1850);
+  ctx.fillText("bgwrapped.boardgaymesjames.com @boardgaymesjames", 540, 1830);
+  ctx.shadowBlur = 0;
 
   return canvas.toBuffer("image/png");
 }
@@ -346,78 +459,99 @@ export async function generateCategoriesCard(username, categories) {
   drawGradientBackground(ctx, "orange");
   drawRadialOverlays(ctx);
 
-  // Header
+  // Header - Year label
   ctx.textAlign = "center";
-  ctx.font = "900 60px Inter";
-  ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
-  drawRoundedRect(ctx, 350, 30, 380, 100, 50);
-  ctx.fill();
-  ctx.fillStyle = "#1a1a2e";
-  ctx.fillText("✨ 2025 ✨", 540, 95);
+  const yearText = "2025";
+  ctx.font = "bold 50px Arial";
+  const yearWidth = ctx.measureText(yearText).width;
+  const pillWidth = yearWidth + 100;
+  const pillHeight = 70;
+  const pillX = (1080 - pillWidth) / 2;
+  const pillY = 60;
 
-  ctx.font = "900 120px Inter";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+  drawRoundedRect(ctx, pillX, pillY, pillWidth, pillHeight, 35);
+  ctx.fill();
+
+  ctx.fillStyle = "#1a1a2e";
+  ctx.fillText(yearText, 540, pillY + 48);
+
+  // Title
+  ctx.font = "bold 90px Arial";
   ctx.fillStyle = "white";
   ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
   ctx.shadowBlur = 20;
-  ctx.fillText("🎨 Top Themes 🎨", 540, 250);
-
-  ctx.font = "700 75px Inter";
-  ctx.shadowBlur = 8;
-  ctx.fillText(username, 540, 350);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 3;
+  ctx.fillText("Top Themes", 540, 230);
   ctx.shadowBlur = 0;
 
+  // Username
+  ctx.font = "bold 65px Arial";
+  ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 2;
+  ctx.fillText(username, 540, 320);
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+
   // Tags
-  let yPos = 450;
-  let xPos = 40;
-  const rowHeight = 100;
+  const topCategories = categories.slice(0, 8);
+  let yPos = 430;
+  let xPos = 60;
+  const tagHeight = 90;
+  const gap = 20;
+  const maxWidth = 1080 - 120;
 
-  categories.forEach((item) => {
-    ctx.font = "800 55px Inter";
+  topCategories.forEach((item) => {
+    ctx.font = "bold 48px Arial";
     const textWidth = ctx.measureText(item.category).width;
-    const countWidth = ctx.measureText(item.count.toString()).width;
-    const tagWidth = textWidth + countWidth + 120;
+    const countText = item.count.toString();
+    const countWidth = ctx.measureText(countText).width;
+    const tagWidth = textWidth + countWidth + 110;
 
-    if (xPos + tagWidth > 1040) {
-      xPos = 40;
-      yPos += rowHeight;
+    if (xPos + tagWidth > maxWidth + 60) {
+      xPos = 60;
+      yPos += tagHeight + gap;
     }
 
-    // Tag background
+    // Tag background with border
     ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
-    drawRoundedRect(ctx, xPos, yPos, tagWidth, 80, 40);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+    ctx.lineWidth = 2;
+    drawRoundedRect(ctx, xPos, yPos, tagWidth, tagHeight, 45);
     ctx.fill();
+    ctx.stroke();
 
     // Text
     ctx.fillStyle = "#1a1a2e";
     ctx.textAlign = "left";
-    ctx.fillText(item.category, xPos + 30, yPos + 55);
+    ctx.fillText(item.category, xPos + 35, yPos + 60);
 
     // Count badge
+    const badgeX = xPos + textWidth + 55;
+    const badgeWidth = countWidth + 40;
     ctx.fillStyle = "rgba(26, 26, 46, 0.15)";
-    drawRoundedRect(
-      ctx,
-      xPos + textWidth + 50,
-      yPos + 20,
-      countWidth + 40,
-      40,
-      20
-    );
+    drawRoundedRect(ctx, badgeX, yPos + 20, badgeWidth, 50, 25);
     ctx.fill();
-    ctx.fillStyle = "#1a1a2e";
-    ctx.font = "900 50px Inter";
-    ctx.textAlign = "center";
-    ctx.fillText(item.count, xPos + textWidth + 70 + countWidth / 2, yPos + 52);
 
-    xPos += tagWidth + 20;
+    ctx.fillStyle = "#1a1a2e";
+    ctx.font = "bold 48px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(countText, badgeX + badgeWidth / 2, yPos + 60);
+
+    xPos += tagWidth + gap;
   });
 
   // Footer
   ctx.textAlign = "center";
-  ctx.font = "700 60px Inter";
+  ctx.font = "bold 46px Arial";
   ctx.fillStyle = "white";
   ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
   ctx.shadowBlur = 4;
-  ctx.fillText("🎲 bgwrapped.boardgaymesjames.com", 540, 1850);
+  ctx.fillText("bgwrapped.boardgaymesjames.com @boardgaymesjames", 540, 1830);
+  ctx.shadowBlur = 0;
 
   return canvas.toBuffer("image/png");
 }
@@ -429,78 +563,99 @@ export async function generatePublishersCard(username, publishers) {
   drawGradientBackground(ctx, "pink");
   drawRadialOverlays(ctx);
 
-  // Header
+  // Header - Year label
   ctx.textAlign = "center";
-  ctx.font = "900 60px Inter";
-  ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
-  drawRoundedRect(ctx, 350, 30, 380, 100, 50);
-  ctx.fill();
-  ctx.fillStyle = "#1a1a2e";
-  ctx.fillText("✨ 2025 ✨", 540, 95);
+  const yearText = "2025";
+  ctx.font = "bold 50px Arial";
+  const yearWidth = ctx.measureText(yearText).width;
+  const pillWidth = yearWidth + 100;
+  const pillHeight = 70;
+  const pillX = (1080 - pillWidth) / 2;
+  const pillY = 60;
 
-  ctx.font = "900 120px Inter";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+  drawRoundedRect(ctx, pillX, pillY, pillWidth, pillHeight, 35);
+  ctx.fill();
+
+  ctx.fillStyle = "#1a1a2e";
+  ctx.fillText(yearText, 540, pillY + 48);
+
+  // Title
+  ctx.font = "bold 90px Arial";
   ctx.fillStyle = "white";
   ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
   ctx.shadowBlur = 20;
-  ctx.fillText("📚 Top Publishers 📚", 540, 250);
-
-  ctx.font = "700 75px Inter";
-  ctx.shadowBlur = 8;
-  ctx.fillText(username, 540, 350);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 3;
+  ctx.fillText("Top Publishers", 540, 230);
   ctx.shadowBlur = 0;
 
+  // Username
+  ctx.font = "bold 65px Arial";
+  ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 2;
+  ctx.fillText(username, 540, 320);
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+
   // Tags
-  let yPos = 450;
-  let xPos = 40;
-  const rowHeight = 100;
+  const topPublishers = publishers.slice(0, 8);
+  let yPos = 430;
+  let xPos = 60;
+  const tagHeight = 90;
+  const gap = 20;
+  const maxWidth = 1080 - 120;
 
-  publishers.forEach((item) => {
-    ctx.font = "800 55px Inter";
+  topPublishers.forEach((item) => {
+    ctx.font = "bold 48px Arial";
     const textWidth = ctx.measureText(item.publisher).width;
-    const countWidth = ctx.measureText(item.count.toString()).width;
-    const tagWidth = textWidth + countWidth + 120;
+    const countText = item.count.toString();
+    const countWidth = ctx.measureText(countText).width;
+    const tagWidth = textWidth + countWidth + 110;
 
-    if (xPos + tagWidth > 1040) {
-      xPos = 40;
-      yPos += rowHeight;
+    if (xPos + tagWidth > maxWidth + 60) {
+      xPos = 60;
+      yPos += tagHeight + gap;
     }
 
-    // Tag background
+    // Tag background with border
     ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
-    drawRoundedRect(ctx, xPos, yPos, tagWidth, 80, 40);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+    ctx.lineWidth = 2;
+    drawRoundedRect(ctx, xPos, yPos, tagWidth, tagHeight, 45);
     ctx.fill();
+    ctx.stroke();
 
     // Text
     ctx.fillStyle = "#1a1a2e";
     ctx.textAlign = "left";
-    ctx.fillText(item.publisher, xPos + 30, yPos + 55);
+    ctx.fillText(item.publisher, xPos + 35, yPos + 60);
 
     // Count badge
+    const badgeX = xPos + textWidth + 55;
+    const badgeWidth = countWidth + 40;
     ctx.fillStyle = "rgba(26, 26, 46, 0.15)";
-    drawRoundedRect(
-      ctx,
-      xPos + textWidth + 50,
-      yPos + 20,
-      countWidth + 40,
-      40,
-      20
-    );
+    drawRoundedRect(ctx, badgeX, yPos + 20, badgeWidth, 50, 25);
     ctx.fill();
-    ctx.fillStyle = "#1a1a2e";
-    ctx.font = "900 50px Inter";
-    ctx.textAlign = "center";
-    ctx.fillText(item.count, xPos + textWidth + 70 + countWidth / 2, yPos + 52);
 
-    xPos += tagWidth + 20;
+    ctx.fillStyle = "#1a1a2e";
+    ctx.font = "bold 48px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(countText, badgeX + badgeWidth / 2, yPos + 60);
+
+    xPos += tagWidth + gap;
   });
 
   // Footer
   ctx.textAlign = "center";
-  ctx.font = "700 60px Inter";
+  ctx.font = "bold 46px Arial";
   ctx.fillStyle = "white";
   ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
   ctx.shadowBlur = 4;
-  ctx.fillText("🎲 bgwrapped.boardgaymesjames.com", 540, 1850);
+  ctx.fillText("bgwrapped.boardgaymesjames.com @boardgaymesjames", 540, 1830);
+  ctx.shadowBlur = 0;
 
   return canvas.toBuffer("image/png");
 }

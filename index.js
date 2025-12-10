@@ -738,6 +738,14 @@ app.get("/api/proxy-image", async (req, res) => {
 
 // Card image generation endpoints
 import { generateCardImage } from "./cardGenerator.js";
+import {
+  generateStatsCard,
+  generateMostPlayedCard,
+  generateMechanicsCard,
+  generateCategoriesCard,
+  generatePublishersCard,
+  generateCommunityCard,
+} from "./canvasGenerator.js";
 
 app.post("/api/generate-card/:cardType", async (req, res) => {
   try {
@@ -760,7 +768,32 @@ app.post("/api/generate-card/:cardType", async (req, res) => {
       return res.status(400).json({ error: "Invalid card type" });
     }
 
-    const imageBuffer = await generateCardImage(cardType, username, data);
+    let imageBuffer;
+
+    // Use canvas for all card types (much faster than Puppeteer)
+    switch (cardType) {
+      case "stats":
+        imageBuffer = await generateStatsCard(username, data);
+        break;
+      case "most-played":
+        imageBuffer = await generateMostPlayedCard(username, data);
+        break;
+      case "mechanics":
+        imageBuffer = await generateMechanicsCard(username, data);
+        break;
+      case "categories":
+        imageBuffer = await generateCategoriesCard(username, data);
+        break;
+      case "publishers":
+        imageBuffer = await generatePublishersCard(username, data);
+        break;
+      case "community":
+        imageBuffer = await generateCommunityCard(data);
+        break;
+      default:
+        // Fallback to Puppeteer if needed
+        imageBuffer = await generateCardImage(cardType, username, data);
+    }
 
     res.set("Content-Type", "image/png");
     res.set("Cache-Control", "public, max-age=3600");
