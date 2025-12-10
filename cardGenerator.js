@@ -39,7 +39,7 @@ function generateCardHTML(cardType, username, data) {
         display: flex;
         flex-direction: column;
         font-size: 20px;
-        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Noto Color Emoji", sans-serif;
+        font-family: "Inter", "Noto Color Emoji", sans-serif;
       }
       
       .wrapped-card::before {
@@ -220,10 +220,15 @@ function generateCardHTML(cardType, username, data) {
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
       }
       
+      .game-card-thumbnail {
+        height: 140px;
+        object-fit: cover;
+        flex-shrink: 0;
+      }
+      
       .game-card-content {
         flex: 1;
         padding: 20px;
-        padding-left: 70px;
         display: flex;
         flex-direction: column;
         justify-content: center;
@@ -362,6 +367,13 @@ function generateCardHTML(cardType, username, data) {
                 (game, index) => `
               <div class="game-card">
                 <div class="game-card-rank">#${index + 1}</div>
+                ${
+                  game.thumbnail
+                    ? `<img src="https://bgg-app-backend-1.onrender.com/api/proxy-image?url=${encodeURIComponent(
+                        game.thumbnail
+                      )}" alt="${game.gameName}" class="game-card-thumbnail" />`
+                    : ""
+                }
                 <div class="game-card-content">
                   <div class="game-card-name">${game.gameName}</div>
                   <div class="game-card-plays">🎯 ${game.playCount} plays</div>
