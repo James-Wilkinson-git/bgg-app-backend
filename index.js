@@ -696,9 +696,12 @@ app.get("/api/analytics/popular-games", async (req, res) => {
             gameName: 1,
             playCount: 1,
             playerCount: { $size: "$uniquePlayers" },
+            averagePerPlayer: {
+              $divide: ["$playCount", { $size: "$uniquePlayers" }],
+            },
           },
         },
-        { $sort: { playCount: -1 } },
+        { $sort: { averagePerPlayer: -1 } },
         { $limit: 20 },
       ])
       .toArray();
