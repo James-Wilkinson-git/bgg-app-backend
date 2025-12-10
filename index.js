@@ -637,7 +637,22 @@ app.get("/api/analytics/popular-games", async (req, res) => {
       ])
       .toArray();
 
-    res.json({ popularGames });
+    // Fetch game details for thumbnails
+    const gameIds = popularGames.map((g) => parseInt(g._id));
+    const gameDetails = await gamesCollection
+      .find({ gameId: { $in: gameIds } })
+      .toArray();
+
+    // Merge details
+    const gamesWithThumbnails = popularGames.map((game) => {
+      const details = gameDetails.find((d) => d.gameId === parseInt(game._id));
+      return {
+        ...game,
+        thumbnail: details?.thumbnail || null,
+      };
+    });
+
+    res.json({ popularGames: gamesWithThumbnails });
   } catch (error) {
     res
       .status(500)
