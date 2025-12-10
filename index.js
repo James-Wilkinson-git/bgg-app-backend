@@ -5,7 +5,6 @@ import cors from "cors";
 import { MongoClient } from "mongodb";
 import dotenv from "dotenv";
 import axios from "axios";
-import * as cheerio from "cheerio";
 
 // Load environment variables from .env file
 dotenv.config();
@@ -764,79 +763,6 @@ app.get("/api/proxy-image", async (req, res) => {
   } catch (error) {
     console.error("Failed to proxy image:", error.message);
     res.status(500).send("Failed to fetch image");
-  }
-});
-
-// Card image generation endpoints
-import { generateCardImage } from "./cardGenerator.js";
-import {
-  generateStatsCard,
-  generateMostPlayedCard,
-  generateMechanicsCard,
-  generateCategoriesCard,
-  generatePublishersCard,
-  generateCommunityCard,
-} from "./canvasGenerator.js";
-
-app.post("/api/generate-card/:cardType", async (req, res) => {
-  try {
-    const { cardType } = req.params;
-    const { username, data } = req.body;
-
-    if (!username || !data) {
-      return res.status(400).json({ error: "Username and data are required" });
-    }
-
-    const validCardTypes = [
-      "stats",
-      "most-played",
-      "community",
-      "mechanics",
-      "categories",
-      "publishers",
-    ];
-    if (!validCardTypes.includes(cardType)) {
-      return res.status(400).json({ error: "Invalid card type" });
-    }
-
-    let imageBuffer;
-
-    // Use canvas for all card types (much faster than Puppeteer)
-    switch (cardType) {
-      case "stats":
-        imageBuffer = await generateStatsCard(username, data);
-        break;
-      case "most-played":
-        imageBuffer = await generateMostPlayedCard(username, data);
-        break;
-      case "mechanics":
-        imageBuffer = await generateMechanicsCard(username, data);
-        break;
-      case "categories":
-        imageBuffer = await generateCategoriesCard(username, data);
-        break;
-      case "publishers":
-        imageBuffer = await generatePublishersCard(username, data);
-        break;
-      case "community":
-        imageBuffer = await generateCommunityCard(data);
-        break;
-      default:
-        // Fallback to Puppeteer if needed
-        imageBuffer = await generateCardImage(cardType, username, data);
-    }
-
-    res.set("Content-Type", "image/png");
-    res.set("Cache-Control", "public, max-age=3600");
-    res.send(imageBuffer);
-  } catch (error) {
-    console.error("Failed to generate card image:", error);
-    console.error("Error stack:", error.stack);
-    res.status(500).json({
-      error: "Failed to generate card image",
-      message: error.message,
-      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
-    });
   }
 });
 
