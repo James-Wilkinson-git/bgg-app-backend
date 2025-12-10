@@ -23,6 +23,35 @@ const mongoClient = new MongoClient(process.env.MONGODB_URI, {
   maxIdleTimeMS: 30000,
 });
 
+// In-memory cache for analytics
+const analyticsCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCacheKey(endpoint, username) {
+  return `${endpoint}:${username}`;
+}
+
+function getFromCache(key) {
+  const cached = analyticsCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+  return null;
+}
+
+function setCache(key, data) {
+  analyticsCache.set(key, { data, timestamp: Date.now() });
+  // Clear old cache entries periodically
+  if (analyticsCache.size > 1000) {
+    const now = Date.now();
+    for (const [k, v] of analyticsCache.entries()) {
+      if (now - v.timestamp > CACHE_TTL) {
+        analyticsCache.delete(k);
+      }
+    }
+  }
+}
+
 // Connect to MongoDB
 let db, gamesCollection, gameIds2025, playsCollection;
 
@@ -408,6 +437,13 @@ app.get("/api/plays/:username", async (req, res) => {
 app.get("/api/analytics/:username/most-played", async (req, res) => {
   try {
     const username = req.params.username.trim().toLowerCase();
+    const cacheKey = getCacheKey('most-played', username);
+    
+    // Check cache first
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
 
     // Build match criteria
     const matchCriteria = { username, year: 2025 };
@@ -431,9 +467,12 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
     // Get game IDs from most played
     const gameIds = mostPlayed.map((game) => parseInt(game._id));
 
-    // Fetch full game details to get mechanics, categories, and publishers
+    // Fetch full game details with projection to reduce data transfer
     const gameDetails = await gamesCollection
-      .find({ id: { $in: gameIds } })
+      .find(
+        { id: { $in: gameIds } },
+        { projection: { id: 1, thumbnail: 1, mechanics: 1, categories: 1, publisher: 1 } }
+      )
       .toArray();
 
     // Create a map for quick lookup
@@ -496,13 +535,18 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
       .slice(0, 10)
       .map(([publisher, count]) => ({ publisher, count }));
 
-    res.json({
+    const result = {
       username,
       mostPlayed: enhancedMostPlayed,
       topMechanics,
       topCategories,
       topPublishers,
-    });
+    };
+    
+    // Cache the result
+    setCache(cacheKey, result);
+    
+    res.json(result);
   } catch (error) {
     res
       .status(500)
@@ -514,6 +558,13 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
 app.get("/api/analytics/:username/stats", async (req, res) => {
   try {
     const username = req.params.username.trim().toLowerCase();
+    const cacheKey = getCacheKey('stats', username);
+    
+    // Check cache first
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
 
     const plays = await playsCollection
       .find({ username, year: 2025 })
@@ -542,9 +593,12 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
 
     const gameIds = Object.keys(gamePlayCounts).map((id) => parseInt(id));
 
-    // Fetch game details to get publication years
+    // Fetch game details with projection - only need yearPublished
     const gameDetails = await gamesCollection
-      .find({ id: { $in: gameIds } })
+      .find(
+        { id: { $in: gameIds } },
+        { projection: { id: 1, yearPublished: 1 } }
+      )
       .toArray();
 
     // Count publication years weighted by play count
@@ -595,7 +649,7 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
       `Average game age for ${username}: ${averageGameAge}, Most common year: ${mostCommonYear}`
     );
 
-    res.json({
+    const result = {
       username,
       year: 2025,
       totalPlays,
@@ -603,7 +657,12 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
       playsByMonth,
       averageGameAge,
       mostCommonYear,
-    });
+    };
+    
+    // Cache the result
+    setCache(cacheKey, result);
+    
+    res.json(result);
   } catch (error) {
     res
       .status(500)
@@ -614,6 +673,14 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
 // Analytics: Get popular games across all users
 app.get("/api/analytics/popular-games", async (req, res) => {
   try {
+    const cacheKey = 'popular-games:all';
+    
+    // Check cache first
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+    
     const popularGames = await playsCollection
       .aggregate([
         { $match: { year: 2025 } },
@@ -637,15 +704,18 @@ app.get("/api/analytics/popular-games", async (req, res) => {
       ])
       .toArray();
 
-    // Fetch game details for thumbnails - try different field names
+    // Fetch game details for thumbnails with projection
     const gameIds = popularGames.map((g) => g._id.toString());
     const gameDetails = await gamesCollection
-      .find({
-        $or: [
-          { gameId: { $in: gameIds.map((id) => parseInt(id)) } },
-          { id: { $in: gameIds } },
-        ],
-      })
+      .find(
+        {
+          $or: [
+            { gameId: { $in: gameIds.map((id) => parseInt(id)) } },
+            { id: { $in: gameIds } },
+          ],
+        },
+        { projection: { id: 1, gameId: 1, thumbnail: 1 } }
+      )
       .toArray();
 
     // Merge details
@@ -661,7 +731,12 @@ app.get("/api/analytics/popular-games", async (req, res) => {
       };
     });
 
-    res.json({ popularGames: gamesWithThumbnails });
+    const result = { popularGames: gamesWithThumbnails };
+    
+    // Cache the result
+    setCache(cacheKey, result);
+    
+    res.json(result);
   } catch (error) {
     res
       .status(500)
