@@ -472,11 +472,11 @@ export async function generateCardImage(cardType, username, data) {
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1080, height: 1920 });
-    
+
     // Set content with a simpler wait strategy and timeout
-    await page.setContent(html, { 
+    await page.setContent(html, {
       waitUntil: "domcontentloaded",
-      timeout: 10000 
+      timeout: 10000,
     });
 
     // Give images a brief moment to load, but don't wait indefinitely
