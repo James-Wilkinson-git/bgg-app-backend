@@ -195,7 +195,7 @@ app.get("/api/scrape", async (req, res) => {
 
 app.get("/api/plays/:username", async (req, res) => {
   try {
-    const username = req.params.username.toLowerCase();
+    const username = req.params.username.trim().toLowerCase();
     const { refetch } = req.query;
     console.log(`Fetching 2025 plays for user: ${username}`);
 
@@ -407,7 +407,7 @@ app.get("/api/plays/:username", async (req, res) => {
 // Analytics: Get user's most played games in 2025 with mechanics, categories, and publishers
 app.get("/api/analytics/:username/most-played", async (req, res) => {
   try {
-    const username = req.params.username.toLowerCase();
+    const username = req.params.username.trim().toLowerCase();
 
     // Build match criteria
     const matchCriteria = { username, year: 2025 };
@@ -513,7 +513,7 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
 // Analytics: Get user's stats summary
 app.get("/api/analytics/:username/stats", async (req, res) => {
   try {
-    const username = req.params.username.toLowerCase();
+    const username = req.params.username.trim().toLowerCase();
 
     const plays = await playsCollection
       .find({ username, year: 2025 })
