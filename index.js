@@ -670,6 +670,68 @@ app.get("/api/proxy-image", async (req, res) => {
   }
 });
 
+// Get community most popular games
+app.get("/api/community/popular-games", async (req, res) => {
+  try {
+    // Aggregate plays across all users to find most popular games
+    const popularGames = await playsCollection
+      .aggregate([
+        {
+          $match: {
+            date: {
+              $gte: "2025-01-01",
+              $lte: "2025-12-31",
+            },
+          },
+        },
+        {
+          $group: {
+            _id: "$gameId",
+            gameName: { $first: "$gameName" },
+            totalPlays: { $sum: 1 },
+            uniqueUsers: { $addToSet: "$username" },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            gameId: "$_id",
+            gameName: 1,
+            totalPlays: 1,
+            uniqueUsers: { $size: "$uniqueUsers" },
+          },
+        },
+        {
+          $sort: { totalPlays: -1 },
+        },
+        {
+          $limit: 10,
+        },
+      ])
+      .toArray();
+
+    // Fetch game details for thumbnails
+    const gameIds = popularGames.map((g) => parseInt(g.gameId));
+    const gameDetails = await gamesCollection
+      .find({ gameId: { $in: gameIds } })
+      .toArray();
+
+    // Merge details
+    const gamesWithDetails = popularGames.map((game) => {
+      const details = gameDetails.find((d) => d.gameId === parseInt(game.gameId));
+      return {
+        ...game,
+        thumbnail: details?.thumbnail || null,
+      };
+    });
+
+    res.json({ popularGames: gamesWithDetails });
+  } catch (error) {
+    console.error("Failed to get popular games:", error);
+    res.status(500).json({ error: "Failed to get popular games" });
+  }
+});
+
 // Card image generation endpoints
 import { generateCardImage } from "./cardGenerator.js";
 
@@ -685,6 +747,7 @@ app.post("/api/generate-card/:cardType", async (req, res) => {
     const validCardTypes = [
       "stats",
       "most-played",
+      "community",
       "mechanics",
       "categories",
       "publishers",

@@ -389,6 +389,38 @@ function generateCardHTML(cardType, username, data) {
         </div>
       </div>
     `;
+  } else if (cardType === "community") {
+    content = `
+      <div class="wrapped-card gradient-pink">
+        <div class="card-content">
+          <div class="card-header">
+            <h2 class="year-label">✨ 2025 ✨</h2>
+            <h1 class="card-title">🌍 Community Favorites 🌍</h1>
+            <p class="username">Most Played by Everyone</p>
+          </div>
+          <div class="games-showcase">
+            ${data
+              .slice(0, 5)
+              .map(
+                (game, index) => `
+              <div class="game-card">
+                <div class="game-card-rank">#${index + 1}</div>
+                ${game.thumbnail ? `<img src="https://bgg-app-backend-1.onrender.com/api/proxy-image?url=${encodeURIComponent(game.thumbnail)}" alt="${game.gameName}" class="game-card-thumbnail" />` : ''}
+                <div class="game-card-content">
+                  <div class="game-card-name">${game.gameName}</div>
+                  <div class="game-card-plays">🎯 ${game.totalPlays} plays • ${game.uniqueUsers} users</div>
+                </div>
+              </div>
+            `
+              )
+              .join("")}
+          </div>
+          <div class="card-footer">
+            <p class="footer-text">🎲 bgwrapped.boardgaymesjames.com @boardgaymesjames</p>
+          </div>
+        </div>
+      </div>
+    `;
   } else if (cardType === "mechanics") {
     content = `
       <div class="wrapped-card gradient-green">
