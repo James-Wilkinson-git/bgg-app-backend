@@ -110,7 +110,7 @@ app.get("/api/games", async (req, res) => {
       const batchIds = newGameIds.slice(i, i + 20);
       const gameResult = await fetchGameDetailsWithDelay(batchIds);
       const gamesToInsert = (gameResult.items.item || []).map((game) => ({
-        id: game.$?.id || "N/A",
+        id: parseInt(game.$?.id) || 0,
         name: game.name?.[0]?.$.value || "No name available",
         description: game.description?.[0] || "No description available",
         yearPublished: game.yearpublished?.[0]?.$.value || "N/A",
@@ -642,10 +642,15 @@ app.get("/api/analytics/popular-games", async (req, res) => {
   try {
     const cacheKey = "popular-games:all";
 
+    // Allow cache busting with ?nocache=true
+    const skipCache = req.query.nocache === "true";
+
     // Check cache first
-    const cached = getFromCache(cacheKey);
-    if (cached) {
-      return res.json(cached);
+    if (!skipCache) {
+      const cached = getFromCache(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
     }
 
     const popularGames = await playsCollection
@@ -673,6 +678,7 @@ app.get("/api/analytics/popular-games", async (req, res) => {
 
     // Fetch game details for thumbnails with projection
     const gameIds = popularGames.map((g) => parseInt(g._id));
+
     const gameDetails = await gamesCollection
       .find({ id: { $in: gameIds } }, { projection: { id: 1, thumbnail: 1 } })
       .toArray();
@@ -685,9 +691,10 @@ app.get("/api/analytics/popular-games", async (req, res) => {
 
     // Merge details
     const gamesWithThumbnails = popularGames.map((game) => {
+      const gameId = parseInt(game._id);
       return {
         ...game,
-        thumbnail: thumbnailMap[parseInt(game._id)] || null,
+        thumbnail: thumbnailMap[gameId] || null,
       };
     });
 
