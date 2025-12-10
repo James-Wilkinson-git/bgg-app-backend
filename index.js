@@ -86,14 +86,12 @@ app.get("/api/games", async (req, res) => {
       .toArray();
     const existingGameIds = existingGames.map((game) => game.id);
     const newGameIds = gameIds.filter((id) => !existingGameIds.includes(id));
-    console.log(`Identified ${newGameIds.length} new game IDs to fetch`);
 
     // Function to fetch game details with a delay
     const fetchGameDetailsWithDelay = async (ids) => {
       const gameDetailsUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${ids.join(
         ","
       )}`;
-      console.log(`Fetching game details from URL: ${gameDetailsUrl}`);
       const gameResponse = await axios.get(gameDetailsUrl, {
         headers: {
           Authorization: `Bearer ${process.env.BGG_API_KEY}`,
@@ -110,7 +108,6 @@ app.get("/api/games", async (req, res) => {
     const newGames = [];
     for (let i = 0; i < newGameIds.length; i += 20) {
       const batchIds = newGameIds.slice(i, i + 20);
-      console.log(`Fetching details for game IDs: ${batchIds.join(", ")}`);
       const gameResult = await fetchGameDetailsWithDelay(batchIds);
       const gamesToInsert = (gameResult.items.item || []).map((game) => ({
         id: game.$?.id || "N/A",
@@ -148,7 +145,6 @@ app.get("/api/games", async (req, res) => {
       // Insert each game into MongoDB as it is fetched
       for (const game of gamesToInsert) {
         await gamesCollection.insertOne(game);
-        console.log(`https://boardgamegeek.com/boardgame/${game.id}`);
         newGames.push(game);
       }
 
@@ -176,12 +172,10 @@ app.get("/api/all-games", async (req, res) => {
 });
 
 app.get("/api/scrape", async (req, res) => {
-  console.log("Received request for /api/scrape");
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   try {
     let page = 1;
     while (true) {
-      console.log(`Scraping page ${page}`);
       const url = `https://boardgamegeek.com/search/boardgame/page/${page}?advsearch=1&q=&include%5Bdesignerid%5D=&include%5Bpublisherid%5D=&geekitemname=&range%5Byearpublished%5D%5Bmin%5D=2025&range%5Byearpublished%5D%5Bmax%5D=2030&range%5Bminage%5D%5Bmax%5D=&range%5Bnumvoters%5D%5Bmin%5D=&range%5Bnumweights%5D%5Bmin%5D=&range%5Bminplayers%5D%5Bmax%5D=&range%5Bmaxplayers%5D%5Bmin%5D=&range%5Bleastplaytime%5D%5Bmin%5D=&range%5Bplaytime%5D%5Bmax%5D=&floatrange%5Bavgrating%5D%5Bmin%5D=&floatrange%5Bavgrating%5D%5Bmax%5D=&floatrange%5Bavgweight%5D%5Bmin%5D=&floatrange%5Bavgweight%5D%5Bmax%5D=&colfiltertype=&searchuser=&nosubtypes%5B0%5D=boardgameexpansion&playerrangetype=normal&B1=Submit`;
       const response = await axios.get(url, {
         headers: {
@@ -190,7 +184,6 @@ app.get("/api/scrape", async (req, res) => {
       });
       const gameEntries = response.data;
       if (gameEntries.items.length === 0) {
-        console.log("No more games found. Exiting loop.");
         break;
       }
       const gameIds = gameEntries.items.map((item) => item.id);
@@ -205,7 +198,6 @@ app.get("/api/scrape", async (req, res) => {
       const newGameIds = gameIds.filter((id) => !existingGameIds.includes(id));
       // Save new game IDs to MongoDB as they are found
       if (newGameIds.length > 0) {
-        console.log(`Saving ${newGameIds.length} new game IDs to MongoDB`);
         await gameIds2025.insertMany(newGameIds.map((id) => ({ id })));
       }
       page++;
@@ -226,7 +218,6 @@ app.get("/api/plays/:username", async (req, res) => {
   try {
     const username = req.params.username.trim().toLowerCase();
     const { refetch } = req.query;
-    console.log(`Fetching 2025 plays for user: ${username}`);
 
     // Check if plays already exist for this user (check all plays, not filtered)
     const existingPlays = await playsCollection
@@ -234,10 +225,6 @@ app.get("/api/plays/:username", async (req, res) => {
       .toArray();
 
     if (existingPlays.length > 0 && refetch !== "true") {
-      console.log(
-        `Found ${existingPlays.length} cached plays for ${username}, returning cached data`
-      );
-
       return res.json({
         username,
         year: 2025,
@@ -247,14 +234,12 @@ app.get("/api/plays/:username", async (req, res) => {
       });
     }
 
-    console.log(`Fetching plays from BGG for ${username}`);
     const allPlays = [];
     let page = 1;
     let hasMorePages = true;
 
     while (hasMorePages) {
       const url = `https://boardgamegeek.com/xmlapi2/plays?username=${username}&mindate=2025-01-01&maxdate=2025-12-31&page=${page}`;
-      console.log(`Fetching page ${page}: ${url}`);
 
       const response = await axios.get(url, {
         headers: {
@@ -266,7 +251,6 @@ app.get("/api/plays/:username", async (req, res) => {
       // Check if we have plays in the response
       if (playsData.plays && playsData.plays.play) {
         const plays = playsData.plays.play;
-        console.log(`Found ${plays.length} plays on page ${page}`);
 
         // Parse and format the plays
         const formattedPlays = plays.map((play) => ({
@@ -303,10 +287,6 @@ app.get("/api/plays/:username", async (req, res) => {
       }
     }
 
-    console.log(
-      `Total plays found for ${username} in 2025: ${allPlays.length}`
-    );
-
     // Save ALL plays to MongoDB (no filtering at save time)
     if (allPlays.length > 0) {
       // Add username to each play document
@@ -319,15 +299,11 @@ app.get("/api/plays/:username", async (req, res) => {
       // Remove existing plays for this user and year, then insert new ones
       await playsCollection.deleteMany({ username, year: 2025 });
       await playsCollection.insertMany(playsWithUsername);
-      console.log(
-        `Saved ${allPlays.length} plays to MongoDB for user ${username}`
-      );
 
       // Extract unique game IDs from plays (before filtering)
       const gameIds = [
         ...new Set(allPlays.map((play) => parseInt(play.item.objectid))),
       ];
-      console.log(`Found ${gameIds.length} unique games in plays`);
 
       // Check which games already exist in the database
       const existingGames = await gamesCollection
@@ -336,14 +312,11 @@ app.get("/api/plays/:username", async (req, res) => {
       const existingGameIds = existingGames.map((game) => game.id);
       const newGameIds = gameIds.filter((id) => !existingGameIds.includes(id));
 
-      console.log(`Need to fetch ${newGameIds.length} new games`);
-
       // Fetch game details in batches of 20
       const fetchGameDetailsWithDelay = async (ids) => {
         const gameDetailsUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${ids.join(
           ","
         )}`;
-        console.log(`Fetching game details from URL: ${gameDetailsUrl}`);
         const gameResponse = await axios.get(gameDetailsUrl, {
           headers: {
             Authorization: `Bearer ${process.env.BGG_API_KEY}`,
@@ -359,7 +332,6 @@ app.get("/api/plays/:username", async (req, res) => {
       const newGames = [];
       for (let i = 0; i < newGameIds.length; i += 20) {
         const batchIds = newGameIds.slice(i, i + 20);
-        console.log(`Fetching details for game IDs: ${batchIds.join(", ")}`);
         const gameResult = await fetchGameDetailsWithDelay(batchIds);
         const gamesToInsert = (gameResult.items.item || []).map((game) => ({
           id: parseInt(game.$?.id) || "N/A",
@@ -398,26 +370,19 @@ app.get("/api/plays/:username", async (req, res) => {
         // Insert each game into MongoDB as it is fetched
         for (const game of gamesToInsert) {
           await gamesCollection.insertOne(game);
-          console.log(
-            `Saved game: https://boardgamegeek.com/boardgame/${game.id}`
-          );
           newGames.push(game);
         }
 
         if (i + 20 < newGameIds.length) {
-          console.log("Waiting 5.5 seconds before next batch...");
           await new Promise((resolve) => setTimeout(resolve, 5500));
         }
       }
-
-      console.log(`Fetched and saved ${newGames.length} new games`);
     }
 
     // Retrieve plays from database
     const finalPlays = await playsCollection
       .find({ username, year: 2025 })
       .toArray();
-    console.log(`Returning ${finalPlays.length} plays for ${username}`);
 
     res.json({
       username,
@@ -437,8 +402,8 @@ app.get("/api/plays/:username", async (req, res) => {
 app.get("/api/analytics/:username/most-played", async (req, res) => {
   try {
     const username = req.params.username.trim().toLowerCase();
-    const cacheKey = getCacheKey('most-played', username);
-    
+    const cacheKey = getCacheKey("most-played", username);
+
     // Check cache first
     const cached = getFromCache(cacheKey);
     if (cached) {
@@ -471,7 +436,15 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
     const gameDetails = await gamesCollection
       .find(
         { id: { $in: gameIds } },
-        { projection: { id: 1, thumbnail: 1, mechanics: 1, categories: 1, publisher: 1 } }
+        {
+          projection: {
+            id: 1,
+            thumbnail: 1,
+            mechanics: 1,
+            categories: 1,
+            publisher: 1,
+          },
+        }
       )
       .toArray();
 
@@ -542,10 +515,10 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
       topCategories,
       topPublishers,
     };
-    
+
     // Cache the result
     setCache(cacheKey, result);
-    
+
     res.json(result);
   } catch (error) {
     res
@@ -558,8 +531,8 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
 app.get("/api/analytics/:username/stats", async (req, res) => {
   try {
     const username = req.params.username.trim().toLowerCase();
-    const cacheKey = getCacheKey('stats', username);
-    
+    const cacheKey = getCacheKey("stats", username);
+
     // Check cache first
     const cached = getFromCache(cacheKey);
     if (cached) {
@@ -618,8 +591,6 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
       }
     });
 
-    console.log(`Year counts for ${username}:`, yearCounts);
-
     // Calculate average game age (weighted by play count)
     let totalWeightedAge = 0;
     let totalPlaysWithYear = 0;
@@ -645,10 +616,6 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
       }
     });
 
-    console.log(
-      `Average game age for ${username}: ${averageGameAge}, Most common year: ${mostCommonYear}`
-    );
-
     const result = {
       username,
       year: 2025,
@@ -658,10 +625,10 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
       averageGameAge,
       mostCommonYear,
     };
-    
+
     // Cache the result
     setCache(cacheKey, result);
-    
+
     res.json(result);
   } catch (error) {
     res
@@ -673,14 +640,14 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
 // Analytics: Get popular games across all users
 app.get("/api/analytics/popular-games", async (req, res) => {
   try {
-    const cacheKey = 'popular-games:all';
-    
+    const cacheKey = "popular-games:all";
+
     // Check cache first
     const cached = getFromCache(cacheKey);
     if (cached) {
       return res.json(cached);
     }
-    
+
     const popularGames = await playsCollection
       .aggregate([
         { $match: { year: 2025 } },
@@ -732,10 +699,10 @@ app.get("/api/analytics/popular-games", async (req, res) => {
     });
 
     const result = { popularGames: gamesWithThumbnails };
-    
+
     // Cache the result
     setCache(cacheKey, result);
-    
+
     res.json(result);
   } catch (error) {
     res
