@@ -412,7 +412,7 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
     // Build match criteria
     const matchCriteria = { username, year: 2025 };
 
-    // Get most played games
+    // Get most played games (top 10 for display)
     const mostPlayed = await playsCollection
       .aggregate([
         { $match: matchCriteria },
@@ -428,8 +428,26 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
       ])
       .toArray();
 
-    // Get game IDs from most played
+    // Get ALL played games for statistics (not just top 10)
+    const allPlayedGames = await playsCollection
+      .aggregate([
+        { $match: matchCriteria },
+        {
+          $group: {
+            _id: "$item.objectid",
+            gameName: { $first: "$item.name" },
+            playCount: { $sum: { $toInt: "$quantity" } },
+          },
+        },
+        { $sort: { playCount: -1 } },
+      ])
+      .toArray();
+
+    // Get game IDs from most played for display
     const gameIds = mostPlayed.map((game) => parseInt(game._id));
+
+    // Get ALL game IDs for statistics
+    const allGameIds = allPlayedGames.map((game) => parseInt(game._id));
 
     // Fetch full game details with projection to reduce data transfer
     const gameDetails = await gamesCollection
@@ -449,10 +467,39 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
       )
       .toArray();
 
+    // Fetch ALL game details for statistics
+    const allGameDetails = await gamesCollection
+      .find(
+        { id: { $in: allGameIds } },
+        {
+          projection: {
+            id: 1,
+            mechanics: 1,
+            categories: 1,
+            publisher: 1,
+            designer: 1,
+            artist: 1,
+          },
+        }
+      )
+      .toArray();
+
     // Create a map for quick lookup
     const gameDetailsMap = {};
     gameDetails.forEach((game) => {
       gameDetailsMap[game.id] = game;
+    });
+
+    // Create a map for ALL game details
+    const allGameDetailsMap = {};
+    allPlayedGames.forEach((game) => {
+      const details = allGameDetails.find((g) => g.id === parseInt(game._id));
+      if (details) {
+        allGameDetailsMap[game._id] = {
+          ...details,
+          playCount: game.playCount,
+        };
+      }
     });
 
     // Enhance most played with full details
@@ -470,11 +517,12 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
       };
     });
 
-    // Calculate most popular mechanics
+    // Calculate most popular mechanics (weighted by play count across ALL games)
     const mechanicsCount = {};
-    gameDetails.forEach((game) => {
+    Object.values(allGameDetailsMap).forEach((game) => {
       game.mechanics?.forEach((mechanic) => {
-        mechanicsCount[mechanic] = (mechanicsCount[mechanic] || 0) + 1;
+        mechanicsCount[mechanic] =
+          (mechanicsCount[mechanic] || 0) + game.playCount;
       });
     });
     const topMechanics = Object.entries(mechanicsCount)
@@ -482,11 +530,12 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
       .slice(0, 10)
       .map(([mechanic, count]) => ({ mechanic, count }));
 
-    // Calculate most popular categories (themes)
+    // Calculate most popular categories (themes) (weighted by play count across ALL games)
     const categoriesCount = {};
-    gameDetails.forEach((game) => {
+    Object.values(allGameDetailsMap).forEach((game) => {
       game.categories?.forEach((category) => {
-        categoriesCount[category] = (categoriesCount[category] || 0) + 1;
+        categoriesCount[category] =
+          (categoriesCount[category] || 0) + game.playCount;
       });
     });
     const topCategories = Object.entries(categoriesCount)
@@ -494,14 +543,14 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
       .slice(0, 10)
       .map(([category, count]) => ({ category, count }));
 
-    // Calculate most popular publishers (using primary/first publisher only)
+    // Calculate most popular publishers (using primary/first publisher only) (weighted by play count across ALL games)
     const publishersCount = {};
-    gameDetails.forEach((game) => {
+    Object.values(allGameDetailsMap).forEach((game) => {
       // Only count the first/primary publisher to avoid confusion
       const primaryPublisher = game.publisher?.[0];
       if (primaryPublisher) {
         publishersCount[primaryPublisher] =
-          (publishersCount[primaryPublisher] || 0) + 1;
+          (publishersCount[primaryPublisher] || 0) + game.playCount;
       }
     });
     const topPublishers = Object.entries(publishersCount)
@@ -509,29 +558,31 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
       .slice(0, 10)
       .map(([publisher, count]) => ({ publisher, count }));
 
-    // Calculate most popular designers (using primary/first designer only)
+    // Calculate most popular designers (using all designers) (weighted by play count across ALL games)
     const designersCount = {};
-    gameDetails.forEach((game) => {
-      // Only count the first/primary designer to avoid confusion
-      const primaryDesigner = game.designer?.[0];
-      if (primaryDesigner && primaryDesigner !== "(Uncredited)") {
-        designersCount[primaryDesigner] =
-          (designersCount[primaryDesigner] || 0) + 1;
-      }
+    Object.values(allGameDetailsMap).forEach((game) => {
+      // Count all designers
+      game.designer?.forEach((designer) => {
+        if (designer && designer !== "(Uncredited)") {
+          designersCount[designer] =
+            (designersCount[designer] || 0) + game.playCount;
+        }
+      });
     });
     const topDesigners = Object.entries(designersCount)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([designer, count]) => ({ designer, count }));
 
-    // Calculate most popular artists (using primary/first artist only)
+    // Calculate most popular artists (using all artists) (weighted by play count across ALL games)
     const artistsCount = {};
-    gameDetails.forEach((game) => {
-      // Only count the first/primary artist to avoid confusion
-      const primaryArtist = game.artist?.[0];
-      if (primaryArtist && primaryArtist !== "(Uncredited)") {
-        artistsCount[primaryArtist] = (artistsCount[primaryArtist] || 0) + 1;
-      }
+    Object.values(allGameDetailsMap).forEach((game) => {
+      // Count all artists
+      game.artist?.forEach((artist) => {
+        if (artist && artist !== "(Uncredited)") {
+          artistsCount[artist] = (artistsCount[artist] || 0) + game.playCount;
+        }
+      });
     });
     const topArtists = Object.entries(artistsCount)
       .sort((a, b) => b[1] - a[1])
