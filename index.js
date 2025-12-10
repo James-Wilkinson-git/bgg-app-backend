@@ -674,10 +674,7 @@ app.get("/api/analytics/popular-games", async (req, res) => {
     // Fetch game details for thumbnails with projection
     const gameIds = popularGames.map((g) => parseInt(g._id));
     const gameDetails = await gamesCollection
-      .find(
-        { id: { $in: gameIds } },
-        { projection: { id: 1, thumbnail: 1 } }
-      )
+      .find({ id: { $in: gameIds } }, { projection: { id: 1, thumbnail: 1 } })
       .toArray();
 
     // Create a lookup map for faster merging
