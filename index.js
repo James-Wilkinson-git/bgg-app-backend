@@ -580,7 +580,7 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
     };
 
     // Cache the result
-    setCache(cacheKey, result);
+    // ...existing code...
 
     res.json(result);
   } catch (error) {
@@ -684,7 +684,7 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
     };
 
     // Cache the result
-    setCache(cacheKey, result);
+    // ...existing code...
 
     res.json(result);
   } catch (error) {
@@ -747,7 +747,7 @@ app.get("/api/analytics/popular-games", async (req, res) => {
     const result = { popularGames: gamesWithThumbnails };
 
     // Cache the result
-    setCache(cacheKey, result);
+    // ...existing code...
 
     res.json(result);
   } catch (error) {
