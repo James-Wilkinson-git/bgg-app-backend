@@ -22,35 +22,6 @@ const mongoClient = new MongoClient(process.env.MONGODB_URI, {
   maxIdleTimeMS: 30000,
 });
 
-// In-memory cache for analytics
-const analyticsCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-function getCacheKey(endpoint, username) {
-  return `${endpoint}:${username}`;
-}
-
-function getFromCache(key) {
-  const cached = analyticsCache.get(key);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.data;
-  }
-  return null;
-}
-
-function setCache(key, data) {
-  analyticsCache.set(key, { data, timestamp: Date.now() });
-  // Clear old cache entries periodically
-  if (analyticsCache.size > 1000) {
-    const now = Date.now();
-    for (const [k, v] of analyticsCache.entries()) {
-      if (now - v.timestamp > CACHE_TTL) {
-        analyticsCache.delete(k);
-      }
-    }
-  }
-}
-
 // Connect to MongoDB
 let db, gamesCollection, gameIds2025, playsCollection;
 
@@ -417,13 +388,6 @@ app.get("/api/plays/:username", async (req, res) => {
 app.get("/api/analytics/:username/most-played", async (req, res) => {
   try {
     const username = req.params.username.trim().toLowerCase();
-    const cacheKey = getCacheKey("most-played", username);
-
-    // Check cache first
-    const cached = getFromCache(cacheKey);
-    if (cached) {
-      return res.json(cached);
-    }
 
     // Build match criteria
     const matchCriteria = { username, year: 2025 };
@@ -630,13 +594,7 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
 app.get("/api/analytics/:username/stats", async (req, res) => {
   try {
     const username = req.params.username.trim().toLowerCase();
-    const cacheKey = getCacheKey("stats", username);
-
-    // Check cache first
-    const cached = getFromCache(cacheKey);
-    if (cached) {
-      return res.json(cached);
-    }
+    // ...existing code...
 
     const plays = await playsCollection
       .find({ username, year: 2025 })
@@ -739,13 +697,7 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
 // Analytics: Get popular games across all users
 app.get("/api/analytics/popular-games", async (req, res) => {
   try {
-    const cacheKey = "popular-games:all";
-
-    // Check cache first (shorter TTL for community data - 1 minute)
-    const cached = analyticsCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < 60 * 1000) {
-      return res.json(cached.data);
-    }
+    // ...existing code...
 
     const popularGames = await playsCollection
       .aggregate([
