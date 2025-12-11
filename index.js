@@ -47,12 +47,21 @@ process.on("SIGINT", async () => {
 app.get("/api/plays/:username", async (req, res) => {
   try {
     const username = req.params.username.trim().toLowerCase();
-    const { refetch } = req.query;
+    const { refetch, excludeBGA } = req.query;
+
+    const bgaLocations = [
+      "Board Game Arena",
+      "BoardGameArena",
+      "BGA",
+      "Boardgamearena",
+      "BoardgameArena - Online",
+      "BGA/Steam",
+    ];
 
     console.log(
       `[BGG WRAPPED] Fetching plays for user: ${username} (refetch=${
         refetch === "true"
-      })`
+      }, excludeBGA=${excludeBGA === "true"})`
     );
 
     // Check if plays already exist for this user (check all plays, not filtered)
@@ -226,9 +235,16 @@ app.get("/api/plays/:username", async (req, res) => {
     }
 
     // Retrieve plays from database
-    const finalPlays = await playsCollection
+    let finalPlays = await playsCollection
       .find({ username, year: 2025 })
       .toArray();
+
+    // Filter out BGA plays if excludeBGA is true
+    if (excludeBGA === "true") {
+      finalPlays = finalPlays.filter(
+        (play) => !bgaLocations.includes(play.location)
+      );
+    }
 
     res.json({
       username,
@@ -248,9 +264,22 @@ app.get("/api/plays/:username", async (req, res) => {
 app.get("/api/analytics/:username/most-played", async (req, res) => {
   try {
     const username = req.params.username.trim().toLowerCase();
+    const { excludeBGA } = req.query;
+
+    const bgaLocations = [
+      "Board Game Arena",
+      "BoardGameArena",
+      "BGA",
+      "Boardgamearena",
+      "BoardgameArena - Online",
+      "BGA/Steam",
+    ];
 
     // Build match criteria
     const matchCriteria = { username, year: 2025 };
+    if (excludeBGA === "true") {
+      matchCriteria.location = { $nin: bgaLocations };
+    }
 
     // Get most played games (top 10 for display)
     const mostPlayed = await playsCollection
@@ -454,11 +483,23 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
 app.get("/api/analytics/:username/stats", async (req, res) => {
   try {
     const username = req.params.username.trim().toLowerCase();
-    // ...existing code...
+    const { excludeBGA } = req.query;
 
-    const plays = await playsCollection
-      .find({ username, year: 2025 })
-      .toArray();
+    const bgaLocations = [
+      "Board Game Arena",
+      "BoardGameArena",
+      "BGA",
+      "Boardgamearena",
+      "BoardgameArena - Online",
+      "BGA/Steam",
+    ];
+
+    const matchCriteria = { username, year: 2025 };
+    if (excludeBGA === "true") {
+      matchCriteria.location = { $nin: bgaLocations };
+    }
+
+    const plays = await playsCollection.find(matchCriteria).toArray();
 
     const totalPlays = plays.reduce(
       (sum, play) => sum + parseInt(play.quantity),
@@ -554,9 +595,25 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
 // Analytics: Get popular games across all users
 app.get("/api/analytics/popular-games", async (req, res) => {
   try {
+    const { excludeBGA } = req.query;
+
+    const bgaLocations = [
+      "Board Game Arena",
+      "BoardGameArena",
+      "BGA",
+      "Boardgamearena",
+      "BoardgameArena - Online",
+      "BGA/Steam",
+    ];
+
+    const matchCriteria = { year: 2025 };
+    if (excludeBGA === "true") {
+      matchCriteria.location = { $nin: bgaLocations };
+    }
+
     const popularGames = await playsCollection
       .aggregate([
-        { $match: { year: 2025 } },
+        { $match: matchCriteria },
         {
           $group: {
             _id: "$item.objectid",
