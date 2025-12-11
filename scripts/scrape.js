@@ -14,6 +14,23 @@ const db = mongoClient.db("bgg");
 const gamesCollection = db.collection("games");
 const gameIds2025 = db.collection("2025games");
 
+const fetchGameDetailsWithDelay = async (ids) => {
+  const gameDetailsUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${ids.join(
+    ","
+  )}`;
+  console.log(`Fetching game details from URL: ${gameDetailsUrl}`);
+  const gameResponse = await axios.get(gameDetailsUrl, {
+    headers: {
+      Authorization: `Bearer ${process.env.BGG_API_KEY}`,
+    },
+  });
+  if (gameResponse.status !== 200) {
+    throw new Error("Failed to fetch the game details");
+  }
+  const gameXmlText = await gameResponse.data;
+  return parseStringPromise(gameXmlText);
+};
+
 const getGamesData = async () => {
   try {
     // Fetch game IDs from the 2025games collection
@@ -27,24 +44,6 @@ const getGamesData = async () => {
     const existingGameIds = existingGames.map((game) => game.id);
     const newGameIds = gameIds.filter((id) => !existingGameIds.includes(id));
     console.log(`Identified ${newGameIds.length} new game IDs to fetch`);
-
-    // Function to fetch game details with a delay
-    const fetchGameDetailsWithDelay = async (ids) => {
-      const gameDetailsUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${ids.join(
-        ","
-      )}`;
-      console.log(`Fetching game details from URL: ${gameDetailsUrl}`);
-      const gameResponse = await axios.get(gameDetailsUrl, {
-        headers: {
-          Authorization: `Bearer ${process.env.BGG_API_KEY}`,
-        },
-      });
-      if (gameResponse.status !== 200) {
-        throw new Error("Failed to fetch the game details");
-      }
-      const gameXmlText = await gameResponse.data;
-      return parseStringPromise(gameXmlText);
-    };
 
     // Fetch game details in batches of 20 with a 5.5-second delay
     const newGames = [];

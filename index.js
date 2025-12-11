@@ -44,146 +44,6 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
-app.get("/api/games", async (req, res) => {
-  try {
-    // Fetch game IDs from the 2025games collection
-    const games2025 = await gameIds2025.find().toArray();
-    const gameIds = games2025.map((game) => game.id);
-
-    // Check MongoDB for existing game IDs
-    const existingGames = await gamesCollection
-      .find({ id: { $in: gameIds } })
-      .toArray();
-    const existingGameIds = existingGames.map((game) => game.id);
-    const newGameIds = gameIds.filter((id) => !existingGameIds.includes(id));
-
-    // Function to fetch game details with a delay
-    const fetchGameDetailsWithDelay = async (ids) => {
-      const gameDetailsUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${ids.join(
-        ","
-      )}`;
-      const gameResponse = await axios.get(gameDetailsUrl, {
-        headers: {
-          Authorization: `Bearer ${process.env.BGG_API_KEY}`,
-        },
-      });
-      if (gameResponse.status !== 200) {
-        throw new Error("Failed to fetch the game details");
-      }
-      const gameXmlText = await gameResponse.data;
-      return parseStringPromise(gameXmlText);
-    };
-
-    // Fetch game details in batches of 20 with a 5.5-second delay
-    const newGames = [];
-    for (let i = 0; i < newGameIds.length; i += 20) {
-      const batchIds = newGameIds.slice(i, i + 20);
-      const gameResult = await fetchGameDetailsWithDelay(batchIds);
-      const gamesToInsert = (gameResult.items.item || []).map((game) => ({
-        id: parseInt(game.$?.id) || 0,
-        name: game.name?.[0]?.$.value || "No name available",
-        description: game.description?.[0] || "No description available",
-        yearPublished: game.yearpublished?.[0]?.$.value || "N/A",
-        minPlayers: game.minplayers?.[0]?.$.value || "N/A",
-        maxPlayers: game.maxplayers?.[0]?.$.value || "N/A",
-        playingTime: game.playingtime?.[0]?.$.value || "N/A",
-        minAge: game.minage?.[0]?.$.value || "N/A",
-        thumbnail:
-          game.thumbnail?.[0] || "https://placehold.co/388x256?text=No+Image",
-        categories:
-          game.link
-            ?.filter((link) => link.$.type === "boardgamecategory")
-            .map((link) => link.$.value) || [],
-        mechanics:
-          game.link
-            ?.filter((link) => link.$.type === "boardgamemechanic")
-            .map((link) => link.$.value) || [],
-        designer:
-          game.link
-            ?.filter((link) => link.$.type === "boardgamedesigner")
-            .map((link) => link.$.value) || [],
-        artist:
-          game.link
-            ?.filter((link) => link.$.type === "boardgameartist")
-            .map((link) => link.$.value) || [],
-        publisher:
-          game.link
-            ?.filter((link) => link.$.type === "boardgamepublisher")
-            .map((link) => link.$.value) || [],
-      }));
-
-      // Insert each game into MongoDB as it is fetched
-      for (const game of gamesToInsert) {
-        await gamesCollection.insertOne(game);
-        newGames.push(game);
-      }
-
-      if (i + 20 < newGameIds.length) {
-        await new Promise((resolve) => setTimeout(resolve, 5500));
-      }
-    }
-
-    // Combine existing and new games
-    const allGames = [...existingGames, ...newGames];
-    res.json(allGames);
-  } catch (error) {
-    res.status(500).send("Failed to fetch game details");
-  }
-});
-
-// New endpoint to return all data from MongoDB
-app.get("/api/all-games", async (req, res) => {
-  try {
-    const games = await gamesCollection.find().toArray();
-    res.json(games);
-  } catch (error) {
-    res.status(500).send("Failed to fetch all games");
-  }
-});
-
-app.get("/api/scrape", async (req, res) => {
-  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  try {
-    let page = 1;
-    while (true) {
-      const url = `https://boardgamegeek.com/search/boardgame/page/${page}?advsearch=1&q=&include%5Bdesignerid%5D=&include%5Bpublisherid%5D=&geekitemname=&range%5Byearpublished%5D%5Bmin%5D=2025&range%5Byearpublished%5D%5Bmax%5D=2030&range%5Bminage%5D%5Bmax%5D=&range%5Bnumvoters%5D%5Bmin%5D=&range%5Bnumweights%5D%5Bmin%5D=&range%5Bminplayers%5D%5Bmax%5D=&range%5Bmaxplayers%5D%5Bmin%5D=&range%5Bleastplaytime%5D%5Bmin%5D=&range%5Bplaytime%5D%5Bmax%5D=&floatrange%5Bavgrating%5D%5Bmin%5D=&floatrange%5Bavgrating%5D%5Bmax%5D=&floatrange%5Bavgweight%5D%5Bmin%5D=&floatrange%5Bavgweight%5D%5Bmax%5D=&colfiltertype=&searchuser=&nosubtypes%5B0%5D=boardgameexpansion&playerrangetype=normal&B1=Submit`;
-      const response = await axios.get(url, {
-        headers: {
-          Authorization: `Bearer ${process.env.BGG_API_KEY}`,
-        },
-      });
-      const gameEntries = response.data;
-      if (gameEntries.items.length === 0) {
-        break;
-      }
-      const gameIds = gameEntries.items.map((item) => item.id);
-
-      // Check MongoDB for existing game IDs
-
-      const existingGameIds = await gameIds2025
-        .find()
-        .toArray()
-        .then((games) => games.map((game) => game.id));
-
-      const newGameIds = gameIds.filter((id) => !existingGameIds.includes(id));
-      // Save new game IDs to MongoDB as they are found
-      if (newGameIds.length > 0) {
-        await gameIds2025.insertMany(newGameIds.map((id) => ({ id })));
-      }
-      page++;
-
-      // Add a delay of 2-5 seconds between requests
-      const delayTime = Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000;
-      await delay(delayTime);
-    }
-
-    res.json({ message: "Scraping completed" });
-  } catch (error) {
-    console.error("Error scraping BGG:", error);
-    res.status(500).send("Failed to scrape BGG");
-  }
-});
-
 app.get("/api/plays/:username", async (req, res) => {
   try {
     const username = req.params.username.trim().toLowerCase();
@@ -472,90 +332,7 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
 
     // Create a map for ALL game details
     const allGameDetailsMap = {};
-    allPlayedGames.forEach((game) => {
-      const details = allGameDetails.find((g) => g.id === parseInt(game._id));
-      if (details) {
-        allGameDetailsMap[game._id] = {
-          ...details,
-          playCount: game.playCount,
-        };
-      }
-    });
-
-    // Enhance most played with full details
-    const enhancedMostPlayed = mostPlayed.map((game) => {
-      const details = gameDetailsMap[parseInt(game._id)];
-      return {
-        gameId: game._id,
-        gameName: game.gameName,
-        playCount: game.playCount,
-        thumbnail:
-          details?.thumbnail || "https://placehold.co/388x256?text=No+Image",
-        mechanics: details?.mechanics || [],
-        categories: details?.categories || [],
-        publisher: details?.publisher || [],
-      };
-    });
-
-    // Calculate most popular mechanics (weighted by play count across ALL games)
-    const mechanicsCount = {};
-    Object.values(allGameDetailsMap).forEach((game) => {
-      game.mechanics?.forEach((mechanic) => {
-        mechanicsCount[mechanic] =
-          (mechanicsCount[mechanic] || 0) + game.playCount;
-      });
-    });
-    const topMechanics = Object.entries(mechanicsCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([mechanic, count]) => ({ mechanic, count }));
-
-    // Calculate most popular categories (themes) (weighted by play count across ALL games)
-    const categoriesCount = {};
-    Object.values(allGameDetailsMap).forEach((game) => {
-      game.categories?.forEach((category) => {
-        categoriesCount[category] =
-          (categoriesCount[category] || 0) + game.playCount;
-      });
-    });
-    const topCategories = Object.entries(categoriesCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([category, count]) => ({ category, count }));
-
-    // Calculate most popular publishers (using primary/first publisher only) (weighted by play count across ALL games)
-    const publishersCount = {};
-    Object.values(allGameDetailsMap).forEach((game) => {
-      // Only count the first/primary publisher to avoid confusion
-      const primaryPublisher = game.publisher?.[0];
-      if (primaryPublisher) {
-        publishersCount[primaryPublisher] =
-          (publishersCount[primaryPublisher] || 0) + game.playCount;
-      }
-    });
-    const topPublishers = Object.entries(publishersCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([publisher, count]) => ({ publisher, count }));
-
-    // Calculate most popular designers (using all designers) (weighted by play count across ALL games)
-    const designersCount = {};
-    Object.values(allGameDetailsMap).forEach((game) => {
-      // Count all designers
-      game.designer?.forEach((designer) => {
-        if (designer && designer !== "(Uncredited)") {
-          designersCount[designer] =
-            (designersCount[designer] || 0) + game.playCount;
-        }
-      });
-    });
-    const topDesigners = Object.entries(designersCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([designer, count]) => ({ designer, count }));
-
-    // Calculate most popular artists (using all artists) (weighted by play count across ALL games)
-    const artistsCount = {};
+    // ...existing code...
     Object.values(allGameDetailsMap).forEach((game) => {
       // Count all artists
       game.artist?.forEach((artist) => {
@@ -683,9 +460,6 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
       mostCommonYear,
     };
 
-    // Cache the result
-    // ...existing code...
-
     res.json(result);
   } catch (error) {
     res
@@ -697,8 +471,6 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
 // Analytics: Get popular games across all users
 app.get("/api/analytics/popular-games", async (req, res) => {
   try {
-    // ...existing code...
-
     const popularGames = await playsCollection
       .aggregate([
         { $match: { year: 2025 } },
@@ -745,10 +517,6 @@ app.get("/api/analytics/popular-games", async (req, res) => {
     });
 
     const result = { popularGames: gamesWithThumbnails };
-
-    // Cache the result
-    // ...existing code...
-
     res.json(result);
   } catch (error) {
     res
