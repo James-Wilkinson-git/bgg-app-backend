@@ -235,16 +235,9 @@ app.get("/api/plays/:username", async (req, res) => {
     }
 
     // Retrieve plays from database
-    let finalPlays = await playsCollection
+    const finalPlays = await playsCollection
       .find({ username, year: 2025 })
       .toArray();
-
-    // Filter out BGA plays if excludeBGA is true
-    if (excludeBGA === "true") {
-      finalPlays = finalPlays.filter(
-        (play) => !bgaLocations.includes(play.location)
-      );
-    }
 
     res.json({
       username,
