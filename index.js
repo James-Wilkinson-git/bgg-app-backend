@@ -332,7 +332,90 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
 
     // Create a map for ALL game details
     const allGameDetailsMap = {};
-    // ...existing code...
+    allPlayedGames.forEach((game) => {
+      const details = allGameDetails.find((g) => g.id === parseInt(game._id));
+      if (details) {
+        allGameDetailsMap[game._id] = {
+          ...details,
+          playCount: game.playCount,
+        };
+      }
+    });
+
+    // Enhance most played with full details
+    const enhancedMostPlayed = mostPlayed.map((game) => {
+      const details = gameDetailsMap[parseInt(game._id)];
+      return {
+        gameId: game._id,
+        gameName: game.gameName,
+        playCount: game.playCount,
+        thumbnail:
+          details?.thumbnail || "https://placehold.co/388x256?text=No+Image",
+        mechanics: details?.mechanics || [],
+        categories: details?.categories || [],
+        publisher: details?.publisher || [],
+      };
+    });
+
+    // Calculate most popular mechanics (weighted by play count across ALL games)
+    const mechanicsCount = {};
+    Object.values(allGameDetailsMap).forEach((game) => {
+      game.mechanics?.forEach((mechanic) => {
+        mechanicsCount[mechanic] =
+          (mechanicsCount[mechanic] || 0) + game.playCount;
+      });
+    });
+    const topMechanics = Object.entries(mechanicsCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([mechanic, count]) => ({ mechanic, count }));
+
+    // Calculate most popular categories (themes) (weighted by play count across ALL games)
+    const categoriesCount = {};
+    Object.values(allGameDetailsMap).forEach((game) => {
+      game.categories?.forEach((category) => {
+        categoriesCount[category] =
+          (categoriesCount[category] || 0) + game.playCount;
+      });
+    });
+    const topCategories = Object.entries(categoriesCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([category, count]) => ({ category, count }));
+
+    // Calculate most popular publishers (using primary/first publisher only) (weighted by play count across ALL games)
+    const publishersCount = {};
+    Object.values(allGameDetailsMap).forEach((game) => {
+      // Only count the first/primary publisher to avoid confusion
+      const primaryPublisher = game.publisher?.[0];
+      if (primaryPublisher) {
+        publishersCount[primaryPublisher] =
+          (publishersCount[primaryPublisher] || 0) + game.playCount;
+      }
+    });
+    const topPublishers = Object.entries(publishersCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([publisher, count]) => ({ publisher, count }));
+
+    // Calculate most popular designers (using all designers) (weighted by play count across ALL games)
+    const designersCount = {};
+    Object.values(allGameDetailsMap).forEach((game) => {
+      // Count all designers
+      game.designer?.forEach((designer) => {
+        if (designer && designer !== "(Uncredited)") {
+          designersCount[designer] =
+            (designersCount[designer] || 0) + game.playCount;
+        }
+      });
+    });
+    const topDesigners = Object.entries(designersCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([designer, count]) => ({ designer, count }));
+
+    // Calculate most popular artists (using all artists) (weighted by play count across ALL games)
+    const artistsCount = {};
     Object.values(allGameDetailsMap).forEach((game) => {
       // Count all artists
       game.artist?.forEach((artist) => {
