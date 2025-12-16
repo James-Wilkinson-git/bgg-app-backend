@@ -597,6 +597,20 @@ app.get("/api/analytics/popular-games", async (req, res) => {
       "Boardgamearena",
       "BoardgameArena - Online",
       "BGA/Steam",
+      "Tabletop Simulator",
+      "Tabletopia",
+      "TTS",
+      "yucata.de",
+      "Yucata",
+      "Yucata.de",
+      "steam",
+      "online",
+      "iPhone",
+      "iOS",
+      "bga",
+      "Video game",
+      "Steam/Android",
+      "Steam",
     ];
 
     const matchCriteria = { year: 2025 };
