@@ -697,6 +697,26 @@ app.get("/api/proxy-image", async (req, res) => {
   }
 });
 
+// Get all 2026 games
+app.get("/api/games/2026", async (req, res) => {
+  try {
+    // Get all 2026 games
+    const games = await gamesCollection
+      .find({ yearPublished: "2026" })
+      .sort({ dateAdded: -1 }) // Sort by most recently added
+      .toArray();
+
+    res.json({
+      games,
+    });
+  } catch (error) {
+    console.error("Error fetching 2026 games:", error.message);
+    res
+      .status(500)
+      .json({ error: "Failed to fetch games", message: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
 });
