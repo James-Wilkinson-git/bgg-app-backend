@@ -12,7 +12,31 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "https://bgg-app.onrender.com",
+      "http://localhost:3000",
+      "http://localhost:5173",
+    ],
+    credentials: true,
+  })
+);
+
+// Additional CORS headers for Render
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "https://bgg-app.onrender.com");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+  );
+  if (req.method === "OPTIONS") {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
 app.use(express.json({ limit: "10mb" }));
 
 // Configure MongoDB client - reuse the same instance
@@ -224,7 +248,11 @@ app.get("/api/plays/:username", async (req, res) => {
 
         // Insert each game into MongoDB as it is fetched
         for (const game of gamesToInsert) {
-          await gamesCollection.insertOne(game);
+          await gamesCollection.updateOne(
+            { id: game.id },
+            { $set: game },
+            { upsert: true }
+          );
           newGames.push(game);
         }
 
