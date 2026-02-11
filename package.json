@@ -13,7 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "@sparticuz/chromium": "^143.0.0",
-    "axios": "^1.7.9",
+    "axios": "^1.13.5",
     "canvas": "^3.2.0",
     "cheerio": "^1.0.0",
     "cors": "^2.8.5",
