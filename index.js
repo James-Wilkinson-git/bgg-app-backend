@@ -703,6 +703,46 @@ app.get("/api/analytics/popular-games", async (req, res) => {
   }
 });
 
+// Proxy BGG collection (xmlapi2) with server-side Bearer token — do not expose BGG_API_KEY to the client
+app.get("/api/bgg/collection/:username", async (req, res) => {
+  try {
+    if (!process.env.BGG_API_KEY) {
+      return res
+        .status(500)
+        .json({ error: "BGG_API_KEY is not configured on the server" });
+    }
+    const username = req.params.username.trim();
+    const q = new URLSearchParams();
+    q.set("username", username);
+    for (const [k, v] of Object.entries(req.query)) {
+      if (k === "username") continue;
+      if (Array.isArray(v)) {
+        v.forEach((item) => q.append(k, String(item)));
+      } else if (v != null && v !== "") {
+        q.set(k, String(v));
+      }
+    }
+    const url = `https://boardgamegeek.com/xmlapi2/collection?${q.toString()}`;
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${process.env.BGG_API_KEY}`,
+      },
+      responseType: "text",
+      validateStatus: () => true,
+    });
+    const ct =
+      response.headers["content-type"] || "application/xml; charset=utf-8";
+    res.set("Content-Type", ct);
+    res.status(response.status).send(response.data);
+  } catch (error) {
+    console.error("BGG collection proxy error:", error.message);
+    res.status(500).json({
+      error: "Failed to fetch BGG collection",
+      message: error.message,
+    });
+  }
+});
+
 // Image proxy endpoint to bypass CORS
 app.get("/api/proxy-image", async (req, res) => {
   try {
