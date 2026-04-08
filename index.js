@@ -47,7 +47,9 @@ const mongoClient = new MongoClient(process.env.MONGODB_URI, {
 });
 
 // Connect to MongoDB
-let db, gamesCollection, gameIds2025, playsCollection;
+let db, gamesCollection, gameIds2025, playsCollection, metaCollection;
+
+const SCRAPE_META_ID = "2026-games-scrape";
 
 try {
   await mongoClient.connect();
@@ -56,6 +58,7 @@ try {
   gamesCollection = db.collection("games");
   gameIds2025 = db.collection("2025games");
   playsCollection = db.collection("plays");
+  metaCollection = db.collection("meta");
 } catch (error) {
   console.error("Failed to connect to MongoDB:", error);
   process.exit(1);
@@ -725,17 +728,36 @@ app.get("/api/proxy-image", async (req, res) => {
   }
 });
 
-// Get all 2026 games
+// Get all 2026 games (optional ?sinceLastRun=true: indexed after prior scrape completion; see scripts/scrape.js meta)
 app.get("/api/games/2026", async (req, res) => {
   try {
-    // Get all 2026 games
+    const sinceLastRun = req.query.sinceLastRun === "true";
+
+    let filter = { yearPublished: "2026" };
+    if (sinceLastRun) {
+      const scrapeMeta = await metaCollection.findOne({ _id: SCRAPE_META_ID });
+      const watermark =
+        scrapeMeta?.priorRunCompletedAt != null
+          ? scrapeMeta.priorRunCompletedAt
+          : new Date(0);
+      filter = {
+        ...filter,
+        firstIndexedAt: { $gt: watermark },
+      };
+    }
+
     const games = await gamesCollection
-      .find({ yearPublished: "2026" })
-      .sort({ dateAdded: -1 }) // Sort by most recently added
+      .find(filter)
+      .sort({
+        bggDiscoveredAt: -1,
+        firstIndexedAt: -1,
+        dateAdded: -1,
+      })
       .toArray();
 
     res.json({
       games,
+      sinceLastRun,
     });
   } catch (error) {
     console.error("Error fetching 2026 games:", error.message);
