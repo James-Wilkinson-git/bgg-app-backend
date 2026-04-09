@@ -788,11 +788,7 @@ app.get("/api/games/2026", async (req, res) => {
 
     const games = await gamesCollection
       .find(filter)
-      .sort({
-        bggDiscoveredAt: -1,
-        firstIndexedAt: -1,
-        dateAdded: -1,
-      })
+      .sort({ id: 1 })
       .toArray();
 
     res.json({
