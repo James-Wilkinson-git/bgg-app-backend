@@ -9,34 +9,57 @@ import axios from "axios";
 // Load environment variables from .env file
 dotenv.config();
 
+const log = (message) => console.log(`[bgg-app-backend] ${message}`);
+
+const loggedAsync = (name, fn, getContext) => async (...args) => {
+  const context = getContext?.(...args);
+  const suffix = context ? ` (${context})` : "";
+  log(`${name} start${suffix}`);
+  try {
+    return await fn(...args);
+  } finally {
+    log(`${name} stop${suffix}`);
+  }
+};
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+const allowedOrigins = [
+  "https://bgg-app.onrender.com",
+  "http://localhost:3000",
+  "http://localhost:5173",
+];
+
+const isBoardgaymesjamesOrigin = (origin) => {
+  try {
+    const { hostname } = new URL(origin);
+    return (
+      hostname === "boardgaymesjames.com" ||
+      hostname.endsWith(".boardgaymesjames.com")
+    );
+  } catch {
+    return false;
+  }
+};
+
 app.use(
   cors({
-    origin: [
-      "https://bgg-app.onrender.com",
-      "http://localhost:3000",
-      "http://localhost:5173",
-    ],
+    origin: (origin, callback) => {
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        isBoardgaymesjamesOrigin(origin)
+      ) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS blocked for origin: ${origin}`));
+      }
+    },
     credentials: true,
   })
 );
 
-// Additional CORS headers for Render
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "https://bgg-app.onrender.com");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
-  );
-  if (req.method === "OPTIONS") {
-    res.sendStatus(200);
-  } else {
-    next();
-  }
-});
 app.use(express.json({ limit: "10mb" }));
 
 // Configure MongoDB client - reuse the same instance
@@ -51,27 +74,62 @@ let db, gamesCollection, gameIds2025, playsCollection, metaCollection;
 
 const SCRAPE_META_ID = "2026-games-scrape";
 
-try {
+const connectMongo = loggedAsync("connectMongo", async () => {
   await mongoClient.connect();
-  console.log("Connected to MongoDB");
   db = mongoClient.db("bgg");
   gamesCollection = db.collection("games");
   gameIds2025 = db.collection("2025games");
   playsCollection = db.collection("plays");
   metaCollection = db.collection("meta");
+});
+
+try {
+  await connectMongo();
 } catch (error) {
-  console.error("Failed to connect to MongoDB:", error);
+  console.error("[bgg-app-backend] connectMongo failed:", error);
   process.exit(1);
 }
 
-// Graceful shutdown
-process.on("SIGINT", async () => {
-  console.log("Closing MongoDB connection...");
-  await mongoClient.close();
-  process.exit(0);
+let server;
+let shuttingDown = false;
+
+const stopHttpServer = loggedAsync("stopHttpServer", async () => {
+  await new Promise((resolve) => {
+    server.close((err) => {
+      if (err) {
+        console.error(
+          "[bgg-app-backend] stopHttpServer failed:",
+          err.message
+        );
+      }
+      resolve();
+    });
+  });
 });
 
-app.get("/api/plays/:username", async (req, res) => {
+const closeMongo = loggedAsync("closeMongo", async () => {
+  await mongoClient.close();
+});
+
+const shutdown = loggedAsync(
+  "shutdown",
+  async (signal) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  await stopHttpServer();
+  await closeMongo();
+  process.exit(0);
+  },
+  (signal) => `signal=${signal}`
+);
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+const getPlays = loggedAsync(
+  "getPlays",
+  async (req, res) => {
   try {
     const username = req.params.username.trim().toLowerCase();
     const { refetch, excludeBGA } = req.query;
@@ -195,7 +253,9 @@ app.get("/api/plays/:username", async (req, res) => {
       const newGameIds = gameIds.filter((id) => !existingGameIds.includes(id));
 
       // Fetch game details in batches of 20
-      const fetchGameDetailsWithDelay = async (ids) => {
+      const fetchGameDetailsWithDelay = loggedAsync(
+        "fetchGameDetailsWithDelay",
+        async (ids) => {
         const gameDetailsUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${ids.join(
           ","
         )}`;
@@ -209,7 +269,9 @@ app.get("/api/plays/:username", async (req, res) => {
         }
         const gameXmlText = await gameResponse.data;
         return parseStringPromise(gameXmlText);
-      };
+      },
+        (ids) => `ids=${ids.length}`
+      );
 
       const newGames = [];
       for (let i = 0; i < newGameIds.length; i += 20) {
@@ -282,10 +344,16 @@ app.get("/api/plays/:username", async (req, res) => {
       .status(500)
       .json({ error: "Failed to fetch user plays", message: error.message });
   }
-});
+  },
+  (req) => `username=${req.params.username}`
+);
+
+app.get("/api/plays/:username", getPlays);
 
 // Analytics: Get user's most played games in 2025 with mechanics, categories, and publishers
-app.get("/api/analytics/:username/most-played", async (req, res) => {
+const getMostPlayed = loggedAsync(
+  "getMostPlayed",
+  async (req, res) => {
   try {
     const username = req.params.username.trim().toLowerCase();
     const { excludeBGA } = req.query;
@@ -501,10 +569,16 @@ app.get("/api/analytics/:username/most-played", async (req, res) => {
       .status(500)
       .json({ error: "Failed to fetch analytics", message: error.message });
   }
-});
+  },
+  (req) => `username=${req.params.username}`
+);
+
+app.get("/api/analytics/:username/most-played", getMostPlayed);
 
 // Analytics: Get user's stats summary
-app.get("/api/analytics/:username/stats", async (req, res) => {
+const getUserStats = loggedAsync(
+  "getUserStats",
+  async (req, res) => {
   try {
     const username = req.params.username.trim().toLowerCase();
     const { excludeBGA } = req.query;
@@ -614,10 +688,14 @@ app.get("/api/analytics/:username/stats", async (req, res) => {
       .status(500)
       .json({ error: "Failed to fetch stats", message: error.message });
   }
-});
+  },
+  (req) => `username=${req.params.username}`
+);
+
+app.get("/api/analytics/:username/stats", getUserStats);
 
 // Analytics: Get popular games across all users
-app.get("/api/analytics/popular-games", async (req, res) => {
+const getPopularGames = loggedAsync("getPopularGames", async (req, res) => {
   try {
     const { excludeBGA } = req.query;
 
@@ -703,8 +781,12 @@ app.get("/api/analytics/popular-games", async (req, res) => {
   }
 });
 
+app.get("/api/analytics/popular-games", getPopularGames);
+
 // Proxy BGG collection (xmlapi2) with server-side Bearer token — do not expose BGG_API_KEY to the client
-app.get("/api/bgg/collection/:username", async (req, res) => {
+const getBggCollection = loggedAsync(
+  "getBggCollection",
+  async (req, res) => {
   try {
     if (!process.env.BGG_API_KEY) {
       return res
@@ -741,10 +823,14 @@ app.get("/api/bgg/collection/:username", async (req, res) => {
       message: error.message,
     });
   }
-});
+  },
+  (req) => `username=${req.params.username}`
+);
+
+app.get("/api/bgg/collection/:username", getBggCollection);
 
 // Image proxy endpoint to bypass CORS
-app.get("/api/proxy-image", async (req, res) => {
+const proxyImage = loggedAsync("proxyImage", async (req, res) => {
   try {
     const { url } = req.query;
     if (!url) {
@@ -768,8 +854,10 @@ app.get("/api/proxy-image", async (req, res) => {
   }
 });
 
+app.get("/api/proxy-image", proxyImage);
+
 // Get all 2026 games (optional ?sinceLastRun=true: indexed after prior scrape completion; see scripts/scrape.js meta)
-app.get("/api/games/2026", async (req, res) => {
+const getGames2026 = loggedAsync("getGames2026", async (req, res) => {
   try {
     const sinceLastRun = req.query.sinceLastRun === "true";
 
@@ -803,6 +891,13 @@ app.get("/api/games/2026", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on ${PORT}`);
+app.get("/api/games/2026", getGames2026);
+
+const startHttpServer = loggedAsync("startHttpServer", async () => {
+  await new Promise((resolve) => {
+    server = app.listen(PORT, resolve);
+  });
+  log(`HTTP server listening on port ${PORT}`);
 });
+
+await startHttpServer();
