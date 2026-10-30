@@ -23,10 +23,6 @@ const loggedAsync =
       log(`${name} stop${suffix}`);
     }
   };
-
-const app = express();
-const PORT = process.env.PORT || 4000;
-
 const allowedOrigins = [
   "https://bgg-app.onrender.com",
   "http://localhost:3000",
@@ -503,7 +499,12 @@ const getMostPlayed = loggedAsync(
             (categoriesCount[category] || 0) + game.playCount;
         });
       });
+      const excludedThemeCategories = new Set(["dice", "card game"]);
       const topCategories = Object.entries(categoriesCount)
+        .filter(
+          ([category]) =>
+            !excludedThemeCategories.has(category.trim().toLowerCase()),
+        )
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10)
         .map(([category, count]) => ({ category, count }));
@@ -511,7 +512,6 @@ const getMostPlayed = loggedAsync(
       // Calculate most popular publishers (using primary/first publisher only) (weighted by play count across ALL games)
       const publishersCount = {};
       Object.values(allGameDetailsMap).forEach((game) => {
-        // Only count the first/primary publisher to avoid confusion
         const primaryPublisher = game.publisher?.[0];
         if (primaryPublisher) {
           publishersCount[primaryPublisher] =
@@ -564,9 +564,6 @@ const getMostPlayed = loggedAsync(
         topArtists,
       };
 
-      // Cache the result
-      // ...existing code...
-
       res.json(result);
     } catch (error) {
       res
@@ -594,6 +591,7 @@ const getUserStats = loggedAsync(
         "Boardgamearena",
         "BoardgameArena - Online",
         "BGA/Steam",
+        "Digital",
       ];
 
       const matchCriteria = { username, year: WRAPPED_YEAR };
