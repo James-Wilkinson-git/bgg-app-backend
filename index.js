@@ -11,16 +11,18 @@ dotenv.config();
 
 const log = (message) => console.log(`[bgg-app-backend] ${message}`);
 
-const loggedAsync = (name, fn, getContext) => async (...args) => {
-  const context = getContext?.(...args);
-  const suffix = context ? ` (${context})` : "";
-  log(`${name} start${suffix}`);
-  try {
-    return await fn(...args);
-  } finally {
-    log(`${name} stop${suffix}`);
-  }
-};
+const loggedAsync =
+  (name, fn, getContext) =>
+  async (...args) => {
+    const context = getContext?.(...args);
+    const suffix = context ? ` (${context})` : "";
+    log(`${name} start${suffix}`);
+    try {
+      return await fn(...args);
+    } finally {
+      log(`${name} stop${suffix}`);
+    }
+  };
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -57,7 +59,7 @@ app.use(
       }
     },
     credentials: true,
-  })
+  }),
 );
 
 app.use(express.json({ limit: "10mb" }));
@@ -70,6 +72,8 @@ const mongoClient = new MongoClient(process.env.MONGODB_URI, {
 });
 
 // Connect to MongoDB
+const WRAPPED_YEAR = 2026;
+
 let db, gamesCollection, gameIds2025, playsCollection, metaCollection;
 
 const SCRAPE_META_ID = "2026-games-scrape";
@@ -97,10 +101,7 @@ const stopHttpServer = loggedAsync("stopHttpServer", async () => {
   await new Promise((resolve) => {
     server.close((err) => {
       if (err) {
-        console.error(
-          "[bgg-app-backend] stopHttpServer failed:",
-          err.message
-        );
+        console.error("[bgg-app-backend] stopHttpServer failed:", err.message);
       }
       resolve();
     });
@@ -114,14 +115,14 @@ const closeMongo = loggedAsync("closeMongo", async () => {
 const shutdown = loggedAsync(
   "shutdown",
   async (signal) => {
-  if (shuttingDown) return;
-  shuttingDown = true;
+    if (shuttingDown) return;
+    shuttingDown = true;
 
-  await stopHttpServer();
-  await closeMongo();
-  process.exit(0);
+    await stopHttpServer();
+    await closeMongo();
+    process.exit(0);
   },
-  (signal) => `signal=${signal}`
+  (signal) => `signal=${signal}`,
 );
 
 process.on("SIGINT", () => shutdown("SIGINT"));
@@ -130,447 +131,450 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 const getPlays = loggedAsync(
   "getPlays",
   async (req, res) => {
-  try {
-    const username = req.params.username.trim().toLowerCase();
-    const { refetch, excludeBGA } = req.query;
+    try {
+      const username = req.params.username.trim().toLowerCase();
+      const { refetch, excludeBGA } = req.query;
 
-    const bgaLocations = [
-      "Board Game Arena",
-      "BoardGameArena",
-      "BGA",
-      "Boardgamearena",
-      "BoardgameArena - Online",
-      "BGA/Steam",
-    ];
-
-    console.log(
-      `[BGG WRAPPED] Fetching plays for user: ${username} (refetch=${
-        refetch === "true"
-      }, excludeBGA=${excludeBGA === "true"})`
-    );
-
-    // Check if plays already exist for this user (check all plays, not filtered)
-    const existingPlays = await playsCollection
-      .find({ username, year: 2025 })
-      .toArray();
-
-    if (existingPlays.length > 0 && refetch !== "true") {
-      console.log(
-        `[BGG WRAPPED] Returning cached plays for user: ${username} (total: ${existingPlays.length})`
-      );
-      return res.json({
-        username,
-        year: 2025,
-        totalPlays: existingPlays.length,
-        plays: existingPlays,
-        cached: true,
-      });
-    }
-
-    const allPlays = [];
-    let page = 1;
-    let hasMorePages = true;
-
-    while (hasMorePages) {
-      const url = `https://boardgamegeek.com/xmlapi2/plays?username=${username}&mindate=2025-01-01&maxdate=2025-12-31&page=${page}`;
-      console.log(
-        `[BGG WRAPPED] Requesting BGG API for user: ${username}, page: ${page}`
-      );
-
-      const response = await axios.get(url, {
-        headers: {
-          Authorization: `Bearer ${process.env.BGG_API_KEY}`,
-        },
-      });
-      const playsData = await parseStringPromise(response.data);
-
-      // Check if we have plays in the response
-      if (playsData.plays && playsData.plays.play) {
-        const plays = playsData.plays.play;
-
-        // Parse and format the plays
-        const formattedPlays = plays.map((play) => ({
-          id: play.$.id,
-          date: play.$.date,
-          quantity: play.$.quantity,
-          length: play.$.length,
-          incomplete: play.$.incomplete === "1",
-          nowinstats: play.$.nowinstats === "1",
-          location: play.$.location || "",
-          item: {
-            name: play.item[0].$.name,
-            objecttype: play.item[0].$.objecttype,
-            objectid: play.item[0].$.objectid,
-          },
-          comments: play.comments?.[0] || "",
-        }));
-
-        allPlays.push(...formattedPlays);
-
-        // Check if there are more pages
-        const total = parseInt(playsData.plays.$.total);
-        const currentCount = page * 100;
-        hasMorePages = currentCount < total;
-
-        if (hasMorePages) {
-          page++;
-          // Add delay to respect BGG rate limits
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-      } else {
-        // No plays found or no more pages
-        hasMorePages = false;
-      }
-    }
-
-    console.log(
-      `[BGG WRAPPED] Finished fetching plays for user: ${username}. Total plays: ${allPlays.length}`
-    );
-
-    // Save ALL plays to MongoDB (no filtering at save time)
-    if (allPlays.length > 0) {
-      // Add username to each play document
-      const playsWithUsername = allPlays.map((play) => ({
-        ...play,
-        username,
-        year: 2025,
-      }));
-
-      // Remove existing plays for this user and year, then insert new ones
-      await playsCollection.deleteMany({ username, year: 2025 });
-      await playsCollection.insertMany(playsWithUsername);
-
-      // Extract unique game IDs from plays (before filtering)
-      const gameIds = [
-        ...new Set(allPlays.map((play) => parseInt(play.item.objectid))),
+      const bgaLocations = [
+        "Board Game Arena",
+        "BoardGameArena",
+        "BGA",
+        "Boardgamearena",
+        "BoardgameArena - Online",
+        "BGA/Steam",
       ];
 
-      // Check which games already exist in the database
-      const existingGames = await gamesCollection
-        .find({ id: { $in: gameIds } })
-        .toArray();
-      const existingGameIds = existingGames.map((game) => game.id);
-      const newGameIds = gameIds.filter((id) => !existingGameIds.includes(id));
+      console.log(
+        `[BGG WRAPPED] Fetching plays for user: ${username} (refetch=${
+          refetch === "true"
+        }, excludeBGA=${excludeBGA === "true"})`,
+      );
 
-      // Fetch game details in batches of 20
-      const fetchGameDetailsWithDelay = loggedAsync(
-        "fetchGameDetailsWithDelay",
-        async (ids) => {
-        const gameDetailsUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${ids.join(
-          ","
-        )}`;
-        const gameResponse = await axios.get(gameDetailsUrl, {
+      // Check if plays already exist for this user (check all plays, not filtered)
+      const existingPlays = await playsCollection
+        .find({ username, year: WRAPPED_YEAR })
+        .toArray();
+
+      if (existingPlays.length > 0 && refetch !== "true") {
+        console.log(
+          `[BGG WRAPPED] Returning cached plays for user: ${username} (total: ${existingPlays.length})`,
+        );
+        return res.json({
+          username,
+          year: WRAPPED_YEAR,
+          totalPlays: existingPlays.length,
+          plays: existingPlays,
+          cached: true,
+        });
+      }
+
+      const allPlays = [];
+      let page = 1;
+      let hasMorePages = true;
+
+      while (hasMorePages) {
+        const url = `https://boardgamegeek.com/xmlapi2/plays?username=${username}&mindate=${WRAPPED_YEAR}-01-01&maxdate=${WRAPPED_YEAR}-12-31&page=${page}`;
+        console.log(
+          `[BGG WRAPPED] Requesting BGG API for user: ${username}, page: ${page}`,
+        );
+
+        const response = await axios.get(url, {
           headers: {
             Authorization: `Bearer ${process.env.BGG_API_KEY}`,
           },
         });
-        if (gameResponse.status !== 200) {
-          throw new Error("Failed to fetch the game details");
-        }
-        const gameXmlText = await gameResponse.data;
-        return parseStringPromise(gameXmlText);
-      },
-        (ids) => `ids=${ids.length}`
-      );
+        const playsData = await parseStringPromise(response.data);
 
-      const newGames = [];
-      for (let i = 0; i < newGameIds.length; i += 20) {
-        const batchIds = newGameIds.slice(i, i + 20);
-        const gameResult = await fetchGameDetailsWithDelay(batchIds);
-        const gamesToInsert = (gameResult.items.item || []).map((game) => ({
-          id: parseInt(game.$?.id) || "N/A",
-          name: game.name?.[0]?.$.value || "No name available",
-          description: game.description?.[0] || "No description available",
-          yearPublished: game.yearpublished?.[0]?.$.value || "N/A",
-          minPlayers: game.minplayers?.[0]?.$.value || "N/A",
-          maxPlayers: game.maxplayers?.[0]?.$.value || "N/A",
-          playingTime: game.playingtime?.[0]?.$.value || "N/A",
-          minAge: game.minage?.[0]?.$.value || "N/A",
-          thumbnail:
-            game.thumbnail?.[0] || "https://placehold.co/388x256?text=No+Image",
-          categories:
-            game.link
-              ?.filter((link) => link.$.type === "boardgamecategory")
-              .map((link) => link.$.value) || [],
-          mechanics:
-            game.link
-              ?.filter((link) => link.$.type === "boardgamemechanic")
-              .map((link) => link.$.value) || [],
-          designer:
-            game.link
-              ?.filter((link) => link.$.type === "boardgamedesigner")
-              .map((link) => link.$.value) || [],
-          artist:
-            game.link
-              ?.filter((link) => link.$.type === "boardgameartist")
-              .map((link) => link.$.value) || [],
-          publisher:
-            game.link
-              ?.filter((link) => link.$.type === "boardgamepublisher")
-              .map((link) => link.$.value) || [],
-          dateAdded: new Date(),
-        }));
+        // Check if we have plays in the response
+        if (playsData.plays && playsData.plays.play) {
+          const plays = playsData.plays.play;
 
-        // Insert each game into MongoDB as it is fetched
-        for (const game of gamesToInsert) {
-          await gamesCollection.updateOne(
-            { id: game.id },
-            { $set: game },
-            { upsert: true }
-          );
-          newGames.push(game);
-        }
+          // Parse and format the plays
+          const formattedPlays = plays.map((play) => ({
+            id: play.$.id,
+            date: play.$.date,
+            quantity: play.$.quantity,
+            length: play.$.length,
+            incomplete: play.$.incomplete === "1",
+            nowinstats: play.$.nowinstats === "1",
+            location: play.$.location || "",
+            item: {
+              name: play.item[0].$.name,
+              objecttype: play.item[0].$.objecttype,
+              objectid: play.item[0].$.objectid,
+            },
+            comments: play.comments?.[0] || "",
+          }));
 
-        if (i + 20 < newGameIds.length) {
-          await new Promise((resolve) => setTimeout(resolve, 5500));
+          allPlays.push(...formattedPlays);
+
+          // Check if there are more pages
+          const total = parseInt(playsData.plays.$.total);
+          const currentCount = page * 100;
+          hasMorePages = currentCount < total;
+
+          if (hasMorePages) {
+            page++;
+            // Add delay to respect BGG rate limits
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        } else {
+          // No plays found or no more pages
+          hasMorePages = false;
         }
       }
+
+      console.log(
+        `[BGG WRAPPED] Finished fetching plays for user: ${username}. Total plays: ${allPlays.length}`,
+      );
+
+      // Save ALL plays to MongoDB (no filtering at save time)
+      if (allPlays.length > 0) {
+        // Add username to each play document
+        const playsWithUsername = allPlays.map((play) => ({
+          ...play,
+          username,
+          year: WRAPPED_YEAR,
+        }));
+
+        // Remove existing plays for this user and year, then insert new ones
+        await playsCollection.deleteMany({ username, year: WRAPPED_YEAR });
+        await playsCollection.insertMany(playsWithUsername);
+
+        // Extract unique game IDs from plays (before filtering)
+        const gameIds = [
+          ...new Set(allPlays.map((play) => parseInt(play.item.objectid))),
+        ];
+
+        // Check which games already exist in the database
+        const existingGames = await gamesCollection
+          .find({ id: { $in: gameIds } })
+          .toArray();
+        const existingGameIds = existingGames.map((game) => game.id);
+        const newGameIds = gameIds.filter(
+          (id) => !existingGameIds.includes(id),
+        );
+
+        // Fetch game details in batches of 20
+        const fetchGameDetailsWithDelay = loggedAsync(
+          "fetchGameDetailsWithDelay",
+          async (ids) => {
+            const gameDetailsUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${ids.join(
+              ",",
+            )}`;
+            const gameResponse = await axios.get(gameDetailsUrl, {
+              headers: {
+                Authorization: `Bearer ${process.env.BGG_API_KEY}`,
+              },
+            });
+            if (gameResponse.status !== 200) {
+              throw new Error("Failed to fetch the game details");
+            }
+            const gameXmlText = await gameResponse.data;
+            return parseStringPromise(gameXmlText);
+          },
+          (ids) => `ids=${ids.length}`,
+        );
+
+        const newGames = [];
+        for (let i = 0; i < newGameIds.length; i += 20) {
+          const batchIds = newGameIds.slice(i, i + 20);
+          const gameResult = await fetchGameDetailsWithDelay(batchIds);
+          const gamesToInsert = (gameResult.items.item || []).map((game) => ({
+            id: parseInt(game.$?.id) || "N/A",
+            name: game.name?.[0]?.$.value || "No name available",
+            description: game.description?.[0] || "No description available",
+            yearPublished: game.yearpublished?.[0]?.$.value || "N/A",
+            minPlayers: game.minplayers?.[0]?.$.value || "N/A",
+            maxPlayers: game.maxplayers?.[0]?.$.value || "N/A",
+            playingTime: game.playingtime?.[0]?.$.value || "N/A",
+            minAge: game.minage?.[0]?.$.value || "N/A",
+            thumbnail:
+              game.thumbnail?.[0] ||
+              "https://placehold.co/388x256?text=No+Image",
+            categories:
+              game.link
+                ?.filter((link) => link.$.type === "boardgamecategory")
+                .map((link) => link.$.value) || [],
+            mechanics:
+              game.link
+                ?.filter((link) => link.$.type === "boardgamemechanic")
+                .map((link) => link.$.value) || [],
+            designer:
+              game.link
+                ?.filter((link) => link.$.type === "boardgamedesigner")
+                .map((link) => link.$.value) || [],
+            artist:
+              game.link
+                ?.filter((link) => link.$.type === "boardgameartist")
+                .map((link) => link.$.value) || [],
+            publisher:
+              game.link
+                ?.filter((link) => link.$.type === "boardgamepublisher")
+                .map((link) => link.$.value) || [],
+            dateAdded: new Date(),
+          }));
+
+          // Insert each game into MongoDB as it is fetched
+          for (const game of gamesToInsert) {
+            await gamesCollection.updateOne(
+              { id: game.id },
+              { $set: game },
+              { upsert: true },
+            );
+            newGames.push(game);
+          }
+
+          if (i + 20 < newGameIds.length) {
+            await new Promise((resolve) => setTimeout(resolve, 5500));
+          }
+        }
+      }
+
+      // Retrieve plays from database
+      const finalPlays = await playsCollection
+        .find({ username, year: WRAPPED_YEAR })
+        .toArray();
+
+      res.json({
+        username,
+        year: WRAPPED_YEAR,
+        totalPlays: finalPlays.length,
+        plays: finalPlays,
+      });
+    } catch (error) {
+      console.error("Error fetching user plays:", error.message);
+      res
+        .status(500)
+        .json({ error: "Failed to fetch user plays", message: error.message });
     }
-
-    // Retrieve plays from database
-    const finalPlays = await playsCollection
-      .find({ username, year: 2025 })
-      .toArray();
-
-    res.json({
-      username,
-      year: 2025,
-      totalPlays: finalPlays.length,
-      plays: finalPlays,
-    });
-  } catch (error) {
-    console.error("Error fetching user plays:", error.message);
-    res
-      .status(500)
-      .json({ error: "Failed to fetch user plays", message: error.message });
-  }
   },
-  (req) => `username=${req.params.username}`
+  (req) => `username=${req.params.username}`,
 );
 
 app.get("/api/plays/:username", getPlays);
 
-// Analytics: Get user's most played games in 2025 with mechanics, categories, and publishers
+// Analytics: Get user's most played games with mechanics, categories, and publishers
 const getMostPlayed = loggedAsync(
   "getMostPlayed",
   async (req, res) => {
-  try {
-    const username = req.params.username.trim().toLowerCase();
-    const { excludeBGA } = req.query;
+    try {
+      const username = req.params.username.trim().toLowerCase();
+      const { excludeBGA } = req.query;
 
-    const bgaLocations = [
-      "Board Game Arena",
-      "BoardGameArena",
-      "BGA",
-      "Boardgamearena",
-      "BoardgameArena - Online",
-      "BGA/Steam",
-    ];
+      const bgaLocations = [
+        "Board Game Arena",
+        "BoardGameArena",
+        "BGA",
+        "Boardgamearena",
+        "BoardgameArena - Online",
+        "BGA/Steam",
+      ];
 
-    // Build match criteria
-    const matchCriteria = { username, year: 2025 };
-    if (excludeBGA === "true") {
-      matchCriteria.location = { $nin: bgaLocations };
-    }
+      // Build match criteria
+      const matchCriteria = { username, year: WRAPPED_YEAR };
+      if (excludeBGA === "true") {
+        matchCriteria.location = { $nin: bgaLocations };
+      }
 
-    // Get most played games (top 10 for display)
-    const mostPlayed = await playsCollection
-      .aggregate([
-        { $match: matchCriteria },
-        {
-          $group: {
-            _id: "$item.objectid",
-            gameName: { $first: "$item.name" },
-            playCount: { $sum: { $toInt: "$quantity" } },
+      // Get most played games (top 10 for display)
+      const mostPlayed = await playsCollection
+        .aggregate([
+          { $match: matchCriteria },
+          {
+            $group: {
+              _id: "$item.objectid",
+              gameName: { $first: "$item.name" },
+              playCount: { $sum: { $toInt: "$quantity" } },
+            },
           },
-        },
-        { $sort: { playCount: -1 } },
-        { $limit: 10 },
-      ])
-      .toArray();
+          { $sort: { playCount: -1 } },
+          { $limit: 10 },
+        ])
+        .toArray();
 
-    // Get ALL played games for statistics (not just top 10)
-    const allPlayedGames = await playsCollection
-      .aggregate([
-        { $match: matchCriteria },
-        {
-          $group: {
-            _id: "$item.objectid",
-            gameName: { $first: "$item.name" },
-            playCount: { $sum: { $toInt: "$quantity" } },
+      // Get ALL played games for statistics (not just top 10)
+      const allPlayedGames = await playsCollection
+        .aggregate([
+          { $match: matchCriteria },
+          {
+            $group: {
+              _id: "$item.objectid",
+              gameName: { $first: "$item.name" },
+              playCount: { $sum: { $toInt: "$quantity" } },
+            },
           },
-        },
-        { $sort: { playCount: -1 } },
-      ])
-      .toArray();
+          { $sort: { playCount: -1 } },
+        ])
+        .toArray();
 
-    // Get game IDs from most played for display
-    const gameIds = mostPlayed.map((game) => parseInt(game._id));
+      // Get game IDs from most played for display
+      const gameIds = mostPlayed.map((game) => parseInt(game._id));
 
-    // Get ALL game IDs for statistics
-    const allGameIds = allPlayedGames.map((game) => parseInt(game._id));
+      // Get ALL game IDs for statistics
+      const allGameIds = allPlayedGames.map((game) => parseInt(game._id));
 
-    // Fetch full game details with projection to reduce data transfer
-    const gameDetails = await gamesCollection
-      .find(
-        { id: { $in: gameIds } },
-        {
-          projection: {
-            id: 1,
-            thumbnail: 1,
-            mechanics: 1,
-            categories: 1,
-            publisher: 1,
-            designer: 1,
-            artist: 1,
+      // Fetch full game details with projection to reduce data transfer
+      const gameDetails = await gamesCollection
+        .find(
+          { id: { $in: gameIds } },
+          {
+            projection: {
+              id: 1,
+              thumbnail: 1,
+              mechanics: 1,
+              categories: 1,
+              publisher: 1,
+              designer: 1,
+              artist: 1,
+            },
           },
+        )
+        .toArray();
+
+      // Fetch ALL game details for statistics
+      const allGameDetails = await gamesCollection
+        .find(
+          { id: { $in: allGameIds } },
+          {
+            projection: {
+              id: 1,
+              mechanics: 1,
+              categories: 1,
+              publisher: 1,
+              designer: 1,
+              artist: 1,
+            },
+          },
+        )
+        .toArray();
+
+      // Create a map for quick lookup
+      const gameDetailsMap = {};
+      gameDetails.forEach((game) => {
+        gameDetailsMap[game.id] = game;
+      });
+
+      // Create a map for ALL game details
+      const allGameDetailsMap = {};
+      allPlayedGames.forEach((game) => {
+        const details = allGameDetails.find((g) => g.id === parseInt(game._id));
+        if (details) {
+          allGameDetailsMap[game._id] = {
+            ...details,
+            playCount: game.playCount,
+          };
         }
-      )
-      .toArray();
+      });
 
-    // Fetch ALL game details for statistics
-    const allGameDetails = await gamesCollection
-      .find(
-        { id: { $in: allGameIds } },
-        {
-          projection: {
-            id: 1,
-            mechanics: 1,
-            categories: 1,
-            publisher: 1,
-            designer: 1,
-            artist: 1,
-          },
-        }
-      )
-      .toArray();
-
-    // Create a map for quick lookup
-    const gameDetailsMap = {};
-    gameDetails.forEach((game) => {
-      gameDetailsMap[game.id] = game;
-    });
-
-    // Create a map for ALL game details
-    const allGameDetailsMap = {};
-    allPlayedGames.forEach((game) => {
-      const details = allGameDetails.find((g) => g.id === parseInt(game._id));
-      if (details) {
-        allGameDetailsMap[game._id] = {
-          ...details,
+      // Enhance most played with full details
+      const enhancedMostPlayed = mostPlayed.map((game) => {
+        const details = gameDetailsMap[parseInt(game._id)];
+        return {
+          gameId: game._id,
+          gameName: game.gameName,
           playCount: game.playCount,
+          thumbnail:
+            details?.thumbnail || "https://placehold.co/388x256?text=No+Image",
+          mechanics: details?.mechanics || [],
+          categories: details?.categories || [],
+          publisher: details?.publisher || [],
         };
-      }
-    });
+      });
 
-    // Enhance most played with full details
-    const enhancedMostPlayed = mostPlayed.map((game) => {
-      const details = gameDetailsMap[parseInt(game._id)];
-      return {
-        gameId: game._id,
-        gameName: game.gameName,
-        playCount: game.playCount,
-        thumbnail:
-          details?.thumbnail || "https://placehold.co/388x256?text=No+Image",
-        mechanics: details?.mechanics || [],
-        categories: details?.categories || [],
-        publisher: details?.publisher || [],
+      // Calculate most popular mechanics (weighted by play count across ALL games)
+      const mechanicsCount = {};
+      Object.values(allGameDetailsMap).forEach((game) => {
+        game.mechanics?.forEach((mechanic) => {
+          mechanicsCount[mechanic] =
+            (mechanicsCount[mechanic] || 0) + game.playCount;
+        });
+      });
+      const topMechanics = Object.entries(mechanicsCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([mechanic, count]) => ({ mechanic, count }));
+
+      // Calculate most popular categories (themes) (weighted by play count across ALL games)
+      const categoriesCount = {};
+      Object.values(allGameDetailsMap).forEach((game) => {
+        game.categories?.forEach((category) => {
+          categoriesCount[category] =
+            (categoriesCount[category] || 0) + game.playCount;
+        });
+      });
+      const topCategories = Object.entries(categoriesCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([category, count]) => ({ category, count }));
+
+      // Calculate most popular publishers (using primary/first publisher only) (weighted by play count across ALL games)
+      const publishersCount = {};
+      Object.values(allGameDetailsMap).forEach((game) => {
+        // Only count the first/primary publisher to avoid confusion
+        const primaryPublisher = game.publisher?.[0];
+        if (primaryPublisher) {
+          publishersCount[primaryPublisher] =
+            (publishersCount[primaryPublisher] || 0) + game.playCount;
+        }
+      });
+      const topPublishers = Object.entries(publishersCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([publisher, count]) => ({ publisher, count }));
+
+      // Calculate most popular designers (using all designers) (weighted by play count across ALL games)
+      const designersCount = {};
+      Object.values(allGameDetailsMap).forEach((game) => {
+        // Count all designers
+        game.designer?.forEach((designer) => {
+          if (designer && designer !== "(Uncredited)") {
+            designersCount[designer] =
+              (designersCount[designer] || 0) + game.playCount;
+          }
+        });
+      });
+      const topDesigners = Object.entries(designersCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([designer, count]) => ({ designer, count }));
+
+      // Calculate most popular artists (using all artists) (weighted by play count across ALL games)
+      const artistsCount = {};
+      Object.values(allGameDetailsMap).forEach((game) => {
+        // Count all artists
+        game.artist?.forEach((artist) => {
+          if (artist && artist !== "(Uncredited)") {
+            artistsCount[artist] = (artistsCount[artist] || 0) + game.playCount;
+          }
+        });
+      });
+      const topArtists = Object.entries(artistsCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([artist, count]) => ({ artist, count }));
+
+      const result = {
+        username,
+        mostPlayed: enhancedMostPlayed,
+        topMechanics,
+        topCategories,
+        topPublishers,
+        topDesigners,
+        topArtists,
       };
-    });
 
-    // Calculate most popular mechanics (weighted by play count across ALL games)
-    const mechanicsCount = {};
-    Object.values(allGameDetailsMap).forEach((game) => {
-      game.mechanics?.forEach((mechanic) => {
-        mechanicsCount[mechanic] =
-          (mechanicsCount[mechanic] || 0) + game.playCount;
-      });
-    });
-    const topMechanics = Object.entries(mechanicsCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([mechanic, count]) => ({ mechanic, count }));
+      // Cache the result
+      // ...existing code...
 
-    // Calculate most popular categories (themes) (weighted by play count across ALL games)
-    const categoriesCount = {};
-    Object.values(allGameDetailsMap).forEach((game) => {
-      game.categories?.forEach((category) => {
-        categoriesCount[category] =
-          (categoriesCount[category] || 0) + game.playCount;
-      });
-    });
-    const topCategories = Object.entries(categoriesCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([category, count]) => ({ category, count }));
-
-    // Calculate most popular publishers (using primary/first publisher only) (weighted by play count across ALL games)
-    const publishersCount = {};
-    Object.values(allGameDetailsMap).forEach((game) => {
-      // Only count the first/primary publisher to avoid confusion
-      const primaryPublisher = game.publisher?.[0];
-      if (primaryPublisher) {
-        publishersCount[primaryPublisher] =
-          (publishersCount[primaryPublisher] || 0) + game.playCount;
-      }
-    });
-    const topPublishers = Object.entries(publishersCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([publisher, count]) => ({ publisher, count }));
-
-    // Calculate most popular designers (using all designers) (weighted by play count across ALL games)
-    const designersCount = {};
-    Object.values(allGameDetailsMap).forEach((game) => {
-      // Count all designers
-      game.designer?.forEach((designer) => {
-        if (designer && designer !== "(Uncredited)") {
-          designersCount[designer] =
-            (designersCount[designer] || 0) + game.playCount;
-        }
-      });
-    });
-    const topDesigners = Object.entries(designersCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([designer, count]) => ({ designer, count }));
-
-    // Calculate most popular artists (using all artists) (weighted by play count across ALL games)
-    const artistsCount = {};
-    Object.values(allGameDetailsMap).forEach((game) => {
-      // Count all artists
-      game.artist?.forEach((artist) => {
-        if (artist && artist !== "(Uncredited)") {
-          artistsCount[artist] = (artistsCount[artist] || 0) + game.playCount;
-        }
-      });
-    });
-    const topArtists = Object.entries(artistsCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([artist, count]) => ({ artist, count }));
-
-    const result = {
-      username,
-      mostPlayed: enhancedMostPlayed,
-      topMechanics,
-      topCategories,
-      topPublishers,
-      topDesigners,
-      topArtists,
-    };
-
-    // Cache the result
-    // ...existing code...
-
-    res.json(result);
-  } catch (error) {
-    res
-      .status(500)
-      .json({ error: "Failed to fetch analytics", message: error.message });
-  }
+      res.json(result);
+    } catch (error) {
+      res
+        .status(500)
+        .json({ error: "Failed to fetch analytics", message: error.message });
+    }
   },
-  (req) => `username=${req.params.username}`
+  (req) => `username=${req.params.username}`,
 );
 
 app.get("/api/analytics/:username/most-played", getMostPlayed);
@@ -579,117 +583,117 @@ app.get("/api/analytics/:username/most-played", getMostPlayed);
 const getUserStats = loggedAsync(
   "getUserStats",
   async (req, res) => {
-  try {
-    const username = req.params.username.trim().toLowerCase();
-    const { excludeBGA } = req.query;
+    try {
+      const username = req.params.username.trim().toLowerCase();
+      const { excludeBGA } = req.query;
 
-    const bgaLocations = [
-      "Board Game Arena",
-      "BoardGameArena",
-      "BGA",
-      "Boardgamearena",
-      "BoardgameArena - Online",
-      "BGA/Steam",
-    ];
+      const bgaLocations = [
+        "Board Game Arena",
+        "BoardGameArena",
+        "BGA",
+        "Boardgamearena",
+        "BoardgameArena - Online",
+        "BGA/Steam",
+      ];
 
-    const matchCriteria = { username, year: 2025 };
-    if (excludeBGA === "true") {
-      matchCriteria.location = { $nin: bgaLocations };
+      const matchCriteria = { username, year: WRAPPED_YEAR };
+      if (excludeBGA === "true") {
+        matchCriteria.location = { $nin: bgaLocations };
+      }
+
+      const plays = await playsCollection.find(matchCriteria).toArray();
+
+      const totalPlays = plays.reduce(
+        (sum, play) => sum + parseInt(play.quantity),
+        0,
+      );
+      const uniqueGames = new Set(plays.map((play) => play.item.objectid)).size;
+
+      // Plays by month
+      const playsByMonth = plays.reduce((acc, play) => {
+        const month = play.date.substring(0, 7); // YYYY-MM
+        acc[month] = (acc[month] || 0) + parseInt(play.quantity);
+        return acc;
+      }, {});
+
+      // Get game IDs with play counts
+      const gamePlayCounts = {};
+      plays.forEach((play) => {
+        const gameId = parseInt(play.item.objectid);
+        gamePlayCounts[gameId] =
+          (gamePlayCounts[gameId] || 0) + parseInt(play.quantity);
+      });
+
+      const gameIds = Object.keys(gamePlayCounts).map((id) => parseInt(id));
+
+      // Fetch game details with projection - only need yearPublished
+      const gameDetails = await gamesCollection
+        .find(
+          { id: { $in: gameIds } },
+          { projection: { id: 1, yearPublished: 1 } },
+        )
+        .toArray();
+
+      // Count publication years weighted by play count
+      const yearCounts = {};
+      gameDetails.forEach((game) => {
+        const yearStr = String(game.yearPublished);
+        const yearNum = parseInt(yearStr);
+        if (
+          yearStr &&
+          yearStr !== "N/A" &&
+          !isNaN(yearNum) &&
+          yearNum > 1900 &&
+          yearNum <= WRAPPED_YEAR
+        ) {
+          const playCount = gamePlayCounts[game.id] || 1;
+          yearCounts[yearNum] = (yearCounts[yearNum] || 0) + playCount;
+        }
+      });
+
+      // Calculate average game age (weighted by play count)
+      let totalWeightedAge = 0;
+      let totalPlaysWithYear = 0;
+
+      Object.entries(yearCounts).forEach(([year, count]) => {
+        const age = WRAPPED_YEAR - parseInt(year);
+        totalWeightedAge += age * count;
+        totalPlaysWithYear += count;
+      });
+
+      const averageGameAge =
+        totalPlaysWithYear > 0
+          ? Math.round(totalWeightedAge / totalPlaysWithYear)
+          : null;
+
+      // Also find most common year for additional context
+      let mostCommonYear = null;
+      let maxCount = 0;
+      Object.entries(yearCounts).forEach(([year, count]) => {
+        if (count > maxCount) {
+          maxCount = count;
+          mostCommonYear = parseInt(year);
+        }
+      });
+
+      const result = {
+        username,
+        year: WRAPPED_YEAR,
+        totalPlays,
+        uniqueGames,
+        playsByMonth,
+        averageGameAge,
+        mostCommonYear,
+      };
+
+      res.json(result);
+    } catch (error) {
+      res
+        .status(500)
+        .json({ error: "Failed to fetch stats", message: error.message });
     }
-
-    const plays = await playsCollection.find(matchCriteria).toArray();
-
-    const totalPlays = plays.reduce(
-      (sum, play) => sum + parseInt(play.quantity),
-      0
-    );
-    const uniqueGames = new Set(plays.map((play) => play.item.objectid)).size;
-
-    // Plays by month
-    const playsByMonth = plays.reduce((acc, play) => {
-      const month = play.date.substring(0, 7); // YYYY-MM
-      acc[month] = (acc[month] || 0) + parseInt(play.quantity);
-      return acc;
-    }, {});
-
-    // Get game IDs with play counts
-    const gamePlayCounts = {};
-    plays.forEach((play) => {
-      const gameId = parseInt(play.item.objectid);
-      gamePlayCounts[gameId] =
-        (gamePlayCounts[gameId] || 0) + parseInt(play.quantity);
-    });
-
-    const gameIds = Object.keys(gamePlayCounts).map((id) => parseInt(id));
-
-    // Fetch game details with projection - only need yearPublished
-    const gameDetails = await gamesCollection
-      .find(
-        { id: { $in: gameIds } },
-        { projection: { id: 1, yearPublished: 1 } }
-      )
-      .toArray();
-
-    // Count publication years weighted by play count
-    const yearCounts = {};
-    gameDetails.forEach((game) => {
-      const yearStr = String(game.yearPublished);
-      const yearNum = parseInt(yearStr);
-      if (
-        yearStr &&
-        yearStr !== "N/A" &&
-        !isNaN(yearNum) &&
-        yearNum > 1900 &&
-        yearNum <= 2025
-      ) {
-        const playCount = gamePlayCounts[game.id] || 1;
-        yearCounts[yearNum] = (yearCounts[yearNum] || 0) + playCount;
-      }
-    });
-
-    // Calculate average game age (weighted by play count)
-    let totalWeightedAge = 0;
-    let totalPlaysWithYear = 0;
-
-    Object.entries(yearCounts).forEach(([year, count]) => {
-      const age = 2025 - parseInt(year);
-      totalWeightedAge += age * count;
-      totalPlaysWithYear += count;
-    });
-
-    const averageGameAge =
-      totalPlaysWithYear > 0
-        ? Math.round(totalWeightedAge / totalPlaysWithYear)
-        : null;
-
-    // Also find most common year for additional context
-    let mostCommonYear = null;
-    let maxCount = 0;
-    Object.entries(yearCounts).forEach(([year, count]) => {
-      if (count > maxCount) {
-        maxCount = count;
-        mostCommonYear = parseInt(year);
-      }
-    });
-
-    const result = {
-      username,
-      year: 2025,
-      totalPlays,
-      uniqueGames,
-      playsByMonth,
-      averageGameAge,
-      mostCommonYear,
-    };
-
-    res.json(result);
-  } catch (error) {
-    res
-      .status(500)
-      .json({ error: "Failed to fetch stats", message: error.message });
-  }
   },
-  (req) => `username=${req.params.username}`
+  (req) => `username=${req.params.username}`,
 );
 
 app.get("/api/analytics/:username/stats", getUserStats);
@@ -722,7 +726,7 @@ const getPopularGames = loggedAsync("getPopularGames", async (req, res) => {
       "Steam",
     ];
 
-    const matchCriteria = { year: 2025 };
+    const matchCriteria = { year: WRAPPED_YEAR };
     if (excludeBGA === "true") {
       matchCriteria.location = { $nin: bgaLocations };
     }
@@ -787,44 +791,44 @@ app.get("/api/analytics/popular-games", getPopularGames);
 const getBggCollection = loggedAsync(
   "getBggCollection",
   async (req, res) => {
-  try {
-    if (!process.env.BGG_API_KEY) {
-      return res
-        .status(500)
-        .json({ error: "BGG_API_KEY is not configured on the server" });
-    }
-    const username = req.params.username.trim();
-    const q = new URLSearchParams();
-    q.set("username", username);
-    for (const [k, v] of Object.entries(req.query)) {
-      if (k === "username") continue;
-      if (Array.isArray(v)) {
-        v.forEach((item) => q.append(k, String(item)));
-      } else if (v != null && v !== "") {
-        q.set(k, String(v));
+    try {
+      if (!process.env.BGG_API_KEY) {
+        return res
+          .status(500)
+          .json({ error: "BGG_API_KEY is not configured on the server" });
       }
+      const username = req.params.username.trim();
+      const q = new URLSearchParams();
+      q.set("username", username);
+      for (const [k, v] of Object.entries(req.query)) {
+        if (k === "username") continue;
+        if (Array.isArray(v)) {
+          v.forEach((item) => q.append(k, String(item)));
+        } else if (v != null && v !== "") {
+          q.set(k, String(v));
+        }
+      }
+      const url = `https://boardgamegeek.com/xmlapi2/collection?${q.toString()}`;
+      const response = await axios.get(url, {
+        headers: {
+          Authorization: `Bearer ${process.env.BGG_API_KEY}`,
+        },
+        responseType: "text",
+        validateStatus: () => true,
+      });
+      const ct =
+        response.headers["content-type"] || "application/xml; charset=utf-8";
+      res.set("Content-Type", ct);
+      res.status(response.status).send(response.data);
+    } catch (error) {
+      console.error("BGG collection proxy error:", error.message);
+      res.status(500).json({
+        error: "Failed to fetch BGG collection",
+        message: error.message,
+      });
     }
-    const url = `https://boardgamegeek.com/xmlapi2/collection?${q.toString()}`;
-    const response = await axios.get(url, {
-      headers: {
-        Authorization: `Bearer ${process.env.BGG_API_KEY}`,
-      },
-      responseType: "text",
-      validateStatus: () => true,
-    });
-    const ct =
-      response.headers["content-type"] || "application/xml; charset=utf-8";
-    res.set("Content-Type", ct);
-    res.status(response.status).send(response.data);
-  } catch (error) {
-    console.error("BGG collection proxy error:", error.message);
-    res.status(500).json({
-      error: "Failed to fetch BGG collection",
-      message: error.message,
-    });
-  }
   },
-  (req) => `username=${req.params.username}`
+  (req) => `username=${req.params.username}`,
 );
 
 app.get("/api/bgg/collection/:username", getBggCollection);
@@ -874,10 +878,7 @@ const getGames2026 = loggedAsync("getGames2026", async (req, res) => {
       };
     }
 
-    const games = await gamesCollection
-      .find(filter)
-      .sort({ id: -1 })
-      .toArray();
+    const games = await gamesCollection.find(filter).sort({ id: -1 }).toArray();
 
     res.json({
       games,
