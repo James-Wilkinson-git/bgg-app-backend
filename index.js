@@ -9,6 +9,9 @@ import axios from "axios";
 // Load environment variables from .env file
 dotenv.config();
 
+const app = express();
+const PORT = process.env.PORT || 4000;
+
 const log = (message) => console.log(`[bgg-app-backend] ${message}`);
 
 const loggedAsync =
