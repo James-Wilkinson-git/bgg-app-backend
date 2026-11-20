@@ -490,6 +490,7 @@ const getMostPlayed = loggedAsync(
         });
       });
       const topMechanics = Object.entries(mechanicsCount)
+        .filter(([mechanic]) => mechanic !== "Solo / Solitaire Game")
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10)
         .map(([mechanic, count]) => ({ mechanic, count }));
